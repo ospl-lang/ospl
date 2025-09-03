@@ -3,7 +3,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::ospl::*;
-use crate::ospl::function::Subspec;
 
 fn main() {
     let root: interpreter::Context = interpreter::Context::new(None);

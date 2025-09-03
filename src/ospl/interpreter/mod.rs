@@ -1,155 +1,34 @@
+#[derive(Debug)]
+pub enum StatementControl {
+    Default,
+    EarlyReturn(Value),
+    Break(Value),
+    Continue,
+}
+
 use super::*;
-use std::collections::HashMap;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::cell::RefCell;
 
-/// Context in which an AST is executed.
-#[derive(Debug, Clone)]
-pub struct Context {
-    /// A reference to parent context.
-    /// 
-    /// This is needed so that you can climb up the chain to find variables
-    /// and items above the current context.
-    parent: Option<Weak<RefCell<Context>>>,
-
-    /// A hashmap of symbols in this context. Self-explainatory
-    vars: HashMap<String, Value>,
-}
-
-impl Context {
-    pub fn new(parent: Option<Rc<RefCell<Context>>>) -> Self {
-        Self {
-            vars: HashMap::new(),
-            parent: parent.as_ref().map(|p| Rc::downgrade(p)),
-        }
-    }
-
-    pub fn get(&self, key: &str) -> Option<Value> {
-        if let Some(v) = self.vars.get(key) {
-            Some(v.clone())
-        } else {
-            self.parent.as_ref()?.upgrade()?.borrow().get(key)
-        }
-    }
-
-    pub fn set(&mut self, key: &str, value: Value) {
-        // Start with the current context
-        let mut current_parent = self.parent.as_ref().and_then(|p| p.upgrade());
-
-        // If the key exists locally, just update it
-        if self.vars.contains_key(key) {
-            self.vars.insert(key.to_string(), value);
-            return;
-        }
-
-        // Walk up the parent chain iteratively
-        while let Some(parent_rc) = current_parent {
-            let mut parent_ctx = parent_rc.borrow_mut();
-            if parent_ctx.vars.contains_key(key) {
-                parent_ctx.vars.insert(key.to_string(), value);
-                return;
-            }
-            current_parent = parent_ctx.parent.as_ref().and_then(|p| p.upgrade());
-        }
-
-        // Key wasn’t found anywhere, insert locally
-        self.vars.insert(key.to_string(), value);
-    }
-}
+pub mod context;
+pub use context::*;
 
 /// executes and evaluates OSPL ASTs
 pub struct Interpreter;
+pub mod function;
+pub mod loops;
 impl Interpreter {
-    /// Unwraps a function spec
-    /// 
-    /// # Arguments
-    /// 
-    /// * `ctx` - The context to inject the values into.
-    ///           This context is mutated
-    /// * `spec` - The spec to unwrap
-    /// * `args` - The args to unwrap with
-    fn unwrap_fn_spec(ctx: Rc<RefCell<Context>>, spec: Vec<Subspec>, args: Vec<Value>) {
-        debug_assert!(spec.len() == args.len());  // should ALWAYS be true
-
-        for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
-            match subspec {
-                Subspec::Bind(key) => {
-                    let _ = ctx.borrow_mut().set(&key, arg);
-                },
-                Subspec::Destruct(tree) => Self::unwrap_fn_spec(ctx.clone(), tree, arg.into_values()),
-                _ => panic!(">//< I don't know what to do here")
-            }
-        }
-        return;
-    }
-
-    /// Handles a loop
-    /// 
-    /// # Arguments
-    /// 
-    /// * `ctx` - The contxet in which to evaluate the loop
-    /// * `body` - The body of the loop
-    /// 
-    /// # Returns
-    /// 
-    /// The return, if there is one, as `StatementControl` (with data attached
-    /// if available)
-    fn do_loop(ctx: Rc<RefCell<Context>>, body: Block) -> StatementControl {
-        'outer: loop {
-            for stmt in &body.0 {   // iterate by reference to avoid cloning
-                let result = Self::stmt(ctx.clone(), stmt.clone());
-                match result {
-                    StatementControl::Break(_) => return result,
-                    StatementControl::EarlyReturn(_) => return result,
-                    StatementControl::Continue => continue 'outer, // continue loop properly
-                    _ => {}  // do nothing, just move to next stmt
-                }
-            }
-        }
-    }
-
-    /// Handles a function call
-    /// 
-    /// # Arguments
-    /// 
-    /// * `ctx` - The context in which to find and run the function
-    /// * `name` - The name of the symbol assigned to the function
-    /// * `args` - The arguments to run the function with.
-    ///            Must be already evaluated into `Value`s
-    /// 
-    /// # Returns
-    /// 
-    /// The return value of the function, if there is one, as `Option<Value>`
-    fn do_function_call(ctx: Rc<RefCell<Context>>, name: String, args: Vec<Value>) -> Option<Value> {
-        // create a child context for the function
-        let child_ctx = Rc::new(
-            RefCell::new(
-                Context::new(
-                    Some(ctx.clone()))));
-
-        // I fscking love Rust for this reason, let-else syntax is amazing!!
-        let Value::Function { spec, body } = ctx.borrow().get(&name)
-            .expect(&format!("expected function `{}` to exist", name))
-        else {
-            panic!("invalid function!")
-        };
-        Self::unwrap_fn_spec(child_ctx.clone(), spec, args);
-
-        // loop through all statements and run them
-        return Self::block(child_ctx, body)
-    }
-
-    /// Evaluates an `ast::Expr`
+    /// Evaluates an `Expr`
     /// 
     /// # Arguments
     /// 
     /// * `ctx` - The context to evaluate this expression in.
     ///           This context is mutated
-    /// * `expr` - The `ast::Expr` to evaluate.
+    /// * `expr` - The `Expr` to evaluate.
     /// 
     /// # Returns
     /// 
-    /// The value of this Expr, as `ast::Value`
+    /// The value of this Expr, as `Value`
     pub fn expr(ctx: Rc<RefCell<Context>>, expr: Expr) -> Value {
         return match expr {
             // if it's a literal we can just unwrap the inner value
@@ -205,13 +84,13 @@ impl Interpreter {
         }
     }
     
-    /// Executes an `ast::Statement`
+    /// Executes a `Statement`
     /// 
     /// # Arguments
     /// 
     /// * `ctx` - The context in which to execute the statement.
     ///           This context is mutated.
-    /// * `stmt` - The `ast::Statement` to execute.
+    /// * `stmt` - The `Statement` to execute.
     /// 
     /// # Returns
     /// 
@@ -256,13 +135,13 @@ impl Interpreter {
         }
     }
 
-    /// Executes an `ast::Block`
+    /// Executes a `Block`
     /// 
     /// # Arguments
     /// 
     /// * `ctx` - The context in which to execute the block.
     ///           This context is mutated.
-    /// * `body` - The `ast::Block` to execute
+    /// * `body` - The `Block` to execute
     /// 
     /// # Returns
     /// 
@@ -280,12 +159,4 @@ impl Interpreter {
 
         return None
     }
-}
-
-#[derive(Debug)]
-pub enum StatementControl {
-    Default,
-    EarlyReturn(Value),
-    Break(Value),
-    Continue,
 }

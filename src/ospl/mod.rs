@@ -2,35 +2,21 @@ use std::{
     collections::HashMap,
     ops::{Add, Div, Mul, Sub},
 };
-pub mod function;
-use function::Subspec;
+
+/// a function spec
+#[derive(Debug, Clone)]
+pub enum Subspec {
+    Bind(String),
+    Ignore,
+    Destruct(Vec<Subspec>),
+    Rest(String),
+}
 
 pub mod interpreter;
 
 ///////////////////////////////////////////////////////////////////////////////
 // values and types
 ///////////////////////////////////////////////////////////////////////////////
-
-#[derive(Debug, Clone)]
-pub enum Type {
-    Ref,
-    Null,
-    Void,
-
-    Int,
-    Float,
-    Bool,
-    String,
-    Tuple(Vec<Type>),
-    Mixmap {
-        ordered: Vec<Type>,
-        keyed: HashMap<String, Type>,
-    },
-    Function {
-        params: Vec<Type>,
-        ret: Box<Type>,
-    },
-}
 
 /// Represents a value in OSPL
 #[derive(Debug, Clone)]

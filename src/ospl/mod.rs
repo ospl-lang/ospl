@@ -1,12 +1,12 @@
 use std::{
-    collections::HashMap,
-    ops::{Add, Div, Mul, Sub},
+    cell::RefCell, collections::HashMap, ops::{Add, Div, Mul, Sub}, rc::Rc
 };
 
 /// a function spec
 #[derive(Debug, Clone)]
 pub enum Subspec {
     Bind(String),
+    BindRef(String),
     Ignore,
     Destruct(Vec<Subspec>),
     Rest(String),
@@ -22,7 +22,7 @@ pub mod interpreter;
 #[derive(Debug, Clone)]
 pub enum Value {
     // stable OSPL types
-    Ref(Box<Value>),
+    Ref(Rc<Value>),
     Null,
     Void,
 
@@ -43,10 +43,10 @@ pub enum Value {
 
     Bool(bool),
     String(String),
-    Tuple(Vec<Value>),
+    Tuple(Vec<Rc<RefCell<Value>>>),
     Mixmap {
-        ordered: Vec<Value>,
-        keyed: HashMap<String, Value>,
+        ordered: Vec<Rc<RefCell<Value>>>,
+        keyed: HashMap<String, Rc<RefCell<Value>>>
     },
     Function {
         spec: Vec<Subspec>,
@@ -55,11 +55,31 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn into_values(self) -> Vec<Value> {
+    /// I chatgpt'd this one I literally CANNOT right now.
+    /// 
+    /// I want to KILL MYSELF over this garbage.
+    /// this ABSOLUTE MINDFUCK of a refactor
+    pub fn into_values(self) -> Vec<Rc<RefCell<Value>>> {
+        match self {
+            Self::Tuple(vals_rc) => {
+                // borrow the Vec<Rc<RefCell<Value>>> and clone the Rc's (cheap)
+                vals_rc.clone()
+            }
+
+            Self::Mixmap { ordered, .. } => {
+                // borrow the Vec<Rc<RefCell<Value>>> and clone the Rc's (cheap)
+                ordered.clone()
+            }
+
+            _ => vec![Rc::new(RefCell::new(self))],
+        }
+    }
+
+
+    pub fn into_id(self) -> String {
         return match self {
-            Self::Tuple(vals) => vals,
-            Self::Mixmap { ordered, .. } => ordered,
-            _ => vec![self],
+            Self::String(s) => s,
+            _ => panic!(">//< expected valid identifier of type str, found something else!")
         }
     }
 
@@ -109,6 +129,9 @@ impl Value {
 
             Value::String(s) => !s.is_empty(),
             Value::Tuple(t) => !t.is_empty(),
+            Value::Mixmap { ordered, keyed }
+                => !ordered.is_empty()
+                || !keyed.is_empty(),
 
             _ => true
         }
@@ -218,10 +241,11 @@ impl Mul for Value {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    VariableAssignment {
-        left: String,  // variable name
+    Assign {
+        left: Box<Expr>,  // variable
         right: Box<Expr>,
     },
+
     Expression(Expr),
 
     // control flow
@@ -243,9 +267,10 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Literal(Value),
-    Variable(String),
+    Variable(Box<Expr>),
+    Property(Box<Expr>, Box<Expr>),
     FunctionCall {
-        name: String,
+        left: Box<Expr>,
         args: Vec<Expr>,
     },
     BinaryOp {
@@ -254,6 +279,37 @@ pub enum Expr {
         op: String
     },
     Loop(Box<Block>)
+}
+
+impl Expr {
+    // convinience functions
+    pub fn lit_id(s: &str) -> Box<Expr> {
+        return Box::new(
+            Expr::Literal(
+                Value::String(
+                    s.to_string()
+                )
+            )
+        )
+    }
+
+    pub fn var(s: &str) -> Box<Expr> {
+        return Box::new(
+            Expr::Variable(
+                Expr::lit_id(s)
+            )
+        )
+    }
+
+    pub fn s_qword(i: u64) -> Box<Expr> {
+        return Box::new(
+            Expr::Literal(
+                Value::QuadrupleWord(
+                    i
+                )
+            )
+        )
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

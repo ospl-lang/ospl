@@ -14,7 +14,7 @@ pub struct Context {
     parent: Option<Weak<RefCell<Context>>>,
 
     /// A hashmap of symbols in this context. Self-explainatory
-    vars: HashMap<String, Value>,
+    vars: HashMap<String, Rc<RefCell<Value>>>,
 }
 
 impl Context {
@@ -25,11 +25,13 @@ impl Context {
         }
     }
 
-    /// Get the cloned value of a variable, traversing up the context tree if needed
-    pub fn get(&self, key: &str) -> Option<Value> {
+    pub fn get(&self, key: &str) -> Option<Rc<RefCell<Value>>> {
         if let Some(v) = self.vars.get(key) {
+            // just a mental note: THIS CLONES AN RC
+            // IT DOESN'T CLONE THE VALUE, IT JUST INCREMENTS THE REF COUNT
             Some(v.clone())
         } else {
+            // recurse deeply like I did to your mother
             self.parent.as_ref()?.upgrade()?.borrow().get(key)
         }
     }
@@ -49,7 +51,7 @@ impl Context {
 
         // if the key exists locally, just update it
         if self.vars.contains_key(key) {
-            self.vars.insert(key.to_string(), value);
+            self.vars.insert(key.to_string(), Rc::new(RefCell::new(value)));
             return;
         }
 
@@ -57,14 +59,14 @@ impl Context {
         while let Some(parent_rc) = current_parent {
             let mut parent_ctx = parent_rc.borrow_mut();
             if parent_ctx.vars.contains_key(key) {
-                parent_ctx.vars.insert(key.to_string(), value);
+                parent_ctx.vars.insert(key.to_string(), Rc::new(RefCell::new(value)));
                 return;
             }
             current_parent = parent_ctx.parent.as_ref().and_then(|p| p.upgrade());
         }
 
         // key wasn’t found anywhere, insert locally
-        self.vars.insert(key.to_string(), value);
+        self.vars.insert(key.to_string(), Rc::new(RefCell::new(value)));
     }
 
     pub fn merge_with(&mut self, other: Context) {

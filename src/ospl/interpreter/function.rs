@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 impl Interpreter {
-    /// Unwraps a function spec
+    /// Destruct into a context
     /// 
     /// # Arguments
     /// 
@@ -12,15 +12,20 @@ impl Interpreter {
     ///           This context is mutated
     /// * `spec` - The spec to unwrap
     /// * `args` - The args to unwrap with
-    fn unwrap_fn_spec(ctx: Rc<RefCell<Context>>, spec: Vec<Subspec>, args: Vec<Value>) {
+    pub fn destruct_into(ctx: Rc<RefCell<Context>>, spec: Vec<Subspec>, args: Vec<Rc<RefCell<Value>>>) {
         debug_assert!(spec.len() == args.len());  // should ALWAYS be true
 
         for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
             match subspec {
                 Subspec::Bind(key) => {
-                    let _ = ctx.borrow_mut().set(&key, arg);
+                    ctx.borrow_mut().set(&key, arg.borrow().clone());
                 },
-                Subspec::Destruct(tree) => Self::unwrap_fn_spec(ctx.clone(), tree, arg.into_values()),
+                Subspec::Destruct(tree) => Self::destruct_into(
+                    ctx.clone(),
+                    tree,
+                    arg.borrow().clone().into_values()
+                ),
+                Subspec::Ignore => {},
                 _ => panic!(">//< I don't know what to do here")
             }
         }
@@ -39,22 +44,29 @@ impl Interpreter {
     /// # Returns
     /// 
     /// The return value of the function, if there is one, as `Option<Value>`
-    pub fn do_function_call(ctx: Rc<RefCell<Context>>, name: String, args: Vec<Value>) -> Option<Value> {
-        // create a child context for the function
-        let child_ctx = Rc::new(
-            RefCell::new(
-                Context::new(
-                    Some(ctx.clone()))));
+    pub fn do_function_call(
+        ctx: Rc<RefCell<Context>>,
+        name: String,
+        args: Vec<Rc<RefCell<Value>>>
+    ) -> Option<Rc<RefCell<Value>>> {
 
-        // I fscking love Rust for this reason, let-else syntax is amazing!!
-        let Value::Function { spec, body } = ctx.borrow().get(&name)
-            .expect(&format!("expected function `{}` to exist", name))
-        else {
-            panic!("invalid function!")
+        // create child context
+        let child_ctx = Rc::new(RefCell::new(Context::new(Some(ctx.clone()))));
+
+        // get the function Value from the context
+        let func_rc = ctx.borrow().get(&name).expect("expected ID"); // Rc<RefCell<Value>>
+        let func_ref = func_rc.borrow(); // Ref<Value>
+
+        // match via reference
+        let (spec, body) = match &*func_ref {
+            Value::Function { spec, body } => (spec.clone(), body.clone()),
+            _ => panic!("expected function"),
         };
-        Self::unwrap_fn_spec(child_ctx.clone(), spec, args);
 
-        // loop through all statements and run them
-        return Self::block(child_ctx, body)
+        // assign arguments
+        Self::destruct_into(child_ctx.clone(), spec, args);
+
+        // run the function body
+        Self::block(child_ctx, body)
     }
 }

@@ -19,7 +19,7 @@ impl Interpreter {
                 match result {
                     StatementControl::Break(_) => return result,
                     StatementControl::EarlyReturn(_) => return result,
-                    StatementControl::Continue => continue 'outer, // continue loop properly
+                    StatementControl::Continue => continue 'outer,  // continue loop properly
                     _ => {}  // do nothing, just move to next stmt
                 }
             }

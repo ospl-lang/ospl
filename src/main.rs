@@ -8,8 +8,8 @@ fn main() {
     let root: interpreter::Context = interpreter::Context::new(None);
     let ctx: Rc<RefCell<interpreter::Context>> = Rc::new(RefCell::new(root));
 
-    let stmt: ospl::Statement = ospl::Statement::Assign {
-        left: Expr::lit_id("add"),
+    let stmt: ospl::Statement = ospl::Statement::VarDeclaration {
+        left: Expr::litstr("add"),
         right: Box::new(
             ospl::Expr::Literal(
                 ospl::Value::Function {
@@ -19,8 +19,8 @@ fn main() {
                     ],
                     body: ospl::Block(vec![
                         // infinite loop
-                        Statement::Assign {
-                            left: Expr::lit_id("i"),
+                        Statement::VarDeclaration {
+                            left: Expr::litstr("i"),
                             right: Box::new(
                                 Expr::Literal(
                                     Value::QuadrupleWord(0)
@@ -31,20 +31,17 @@ fn main() {
                             Expr::Loop(
                                 Box::new(
                                     Block(vec![
+                                        Statement::Print {
+                                            thing: Expr::var("i")
+                                        },
                                         Statement::Assign {
-                                            left: Expr::lit_id("i"),
+                                            left: Expr::var("i"),
                                             right: Box::new(Expr::BinaryOp {
                                                 left: Expr::var("i"),
                                                 right: Expr::s_qword(1),
                                                 op: "+".into()
                                             })
                                         },
-                                        Statement::Expression(Expr::FunctionCall {
-                                            left: Expr::lit_id("println"),
-                                            args: vec![
-                                                *Expr::var("i")
-                                            ]
-                                        }),
                                         Statement::If {
                                             condition: Expr::BinaryOp {
                                                 left: Expr::var("i"),
@@ -71,6 +68,8 @@ fn main() {
             )
         )
     };
+
+    println!("yay");
     // interpreter::Interpreter::stmt(ctx.clone(), stmt.clone());
     interpreter::Interpreter::block(
         ctx,

@@ -69,6 +69,10 @@ impl Context {
         self.vars.insert(key.to_string(), Rc::new(RefCell::new(value)));
     }
 
+    pub fn declare(&mut self, key: &str, value: Rc<RefCell<Value>>) {
+        self.vars.insert(key.to_string(), value);
+    }
+
     pub fn merge_with(&mut self, other: Context) {
         self.vars.extend(other.vars);
     }

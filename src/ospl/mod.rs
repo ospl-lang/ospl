@@ -21,8 +21,11 @@ pub mod interpreter;
 /// Represents a value in OSPL
 #[derive(Debug, Clone)]
 pub enum Value {
+    // constants
+    Const(Box<Value>),
+
     // stable OSPL types
-    Ref(Rc<Value>),
+    Ref(Rc<RefCell<Value>>),
     Null,
     Void,
 
@@ -52,13 +55,13 @@ pub enum Value {
         spec: Vec<Subspec>,
         body: Block,
     },
+    Object(HashMap<String, Rc<RefCell<Value>>>),
+    Class {
+        parents: Vec<Rc<RefCell<Value>>>,
+    }
 }
 
 impl Value {
-    /// I chatgpt'd this one I literally CANNOT right now.
-    /// 
-    /// I want to KILL MYSELF over this garbage.
-    /// this ABSOLUTE MINDFUCK of a refactor
     pub fn into_values(self) -> Vec<Rc<RefCell<Value>>> {
         match self {
             Self::Tuple(vals_rc) => {
@@ -75,11 +78,10 @@ impl Value {
         }
     }
 
-
-    pub fn into_id(self) -> String {
+    pub fn into_id(&self) -> String {
         return match self {
-            Self::String(s) => s,
-            _ => panic!(">//< expected valid identifier of type str, found something else!")
+            Self::String(s) => s.to_string(),
+            other @ _ => panic!(">//< expected valid identifier of type str, found: {:?}", other)
         }
     }
 
@@ -133,6 +135,8 @@ impl Value {
                 => !ordered.is_empty()
                 || !keyed.is_empty(),
 
+            // may or may not work!
+            //Value::Ref(inner) => Self::truthiness(inner),
             _ => true
         }
     }
@@ -242,7 +246,11 @@ impl Mul for Value {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign {
-        left: Box<Expr>,  // variable
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    VarDeclaration {
+        left: Box<Expr>,
         right: Box<Expr>,
     },
 
@@ -252,6 +260,10 @@ pub enum Statement {
     Return(Expr),
     Break(Expr),
     Continue,
+
+    Print {
+        thing: Box<Expr>
+    },
 
     // if-else
     If {
@@ -278,12 +290,14 @@ pub enum Expr {
         right: Box<Expr>,
         op: String
     },
-    Loop(Box<Block>)
+    Loop(Box<Block>),
+    Deref(Box<Expr>),
+    Ref(Box<Expr>),
 }
 
 impl Expr {
     // convinience functions
-    pub fn lit_id(s: &str) -> Box<Expr> {
+    pub fn litstr(s: &str) -> Box<Expr> {
         return Box::new(
             Expr::Literal(
                 Value::String(
@@ -296,7 +310,7 @@ impl Expr {
     pub fn var(s: &str) -> Box<Expr> {
         return Box::new(
             Expr::Variable(
-                Expr::lit_id(s)
+                Expr::litstr(s)
             )
         )
     }

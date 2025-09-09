@@ -17,41 +17,26 @@ pub use context::*;
 pub struct Interpreter;
 pub mod function;
 pub mod loops;
+pub mod object;
 impl Interpreter {
     fn solve_for_avbk(
         ctx: &Rc<RefCell<Context>>,
         a: Box<Expr>,
         b: Box<Expr>,
     ) -> (Rc<RefCell<Value>>, String) {
-        // Resolve a_key
-        let a_key = Self::expr(ctx.clone(), *a)
-            .borrow()
+        // Resolve a_value (av)
+        let a_value: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *a);
 
-            // safe to clone, we literally could not care less about
-            // mutability here
-            .clone()
-            .into_id();
-
-        // Grab the actual container from the environment
-        let a_value_ref = ctx
-            .borrow()
-            .get(&a_key)
-            .expect(">//< expected ID")
-
-            // safe to clone, we clone the Rc, incrementing the refcount.
-            // this is to help you, Oscar. You're welcome ^_^
-            .clone();
-
-        // Resolve b_key
+        // Resolve b_key (bk)
         let b_key = Self::expr(ctx.clone(), *b)
             .borrow()
 
             // safe to clone, we literally could not care less about
-            // mutability here, we only care abotu the ID
+            // mutability here, we only care about the ID
             .clone()
             .into_id();
 
-        (a_value_ref, b_key)
+        (a_value, b_key)
     }
 
     /// Evaluates an `Expr`
@@ -78,18 +63,12 @@ impl Interpreter {
 
                 ctx.borrow()
                     .get(&id)
-                    .expect("expected ID")
+                    .unwrap_or_else(|| panic!("oh no `{}` no exist!", id))
                     .clone() // cheap Rc clone
             }
 
-            // it it's a variable, we try to get this variable
-            // I completely chatgpt'd this one too
-            // I have no idea what's going on
-            // and Kevin I know that's bad practice Rust is hard as fuck okay...
-            // I don't want to waste 6 days refactoring half the fuckin codebase
-            // because I need property access.
             Expr::Property(a, b) => {
-                let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b); // Rc<RefCell<Value>>
+                let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
 
                 let val: Rc<RefCell<Value>> = match &*a_value.borrow() {
                     Value::Tuple(t) => {
@@ -123,14 +102,13 @@ impl Interpreter {
 
             // if it's a function call, we go and handle that
             Expr::FunctionCall { left, args } => {
-                let name = Self::expr(ctx.clone(), *left).borrow().clone().into_id();
-
+                let function = Self::expr(ctx.clone(), *left);
                 let new_args: Vec<Rc<RefCell<Value>>> = args
                     .iter()
-                    .map(|arg| Interpreter::expr(ctx.clone(), arg.clone()).clone())
+                    .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
-                    return Self::do_function_call(ctx, name, new_args)
+                    return Self::do_function_call(ctx, function, new_args)
                         .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
@@ -139,7 +117,8 @@ impl Interpreter {
                 // sorry to bring back trauma from C++
                 // I just needed a variable name...
 
-                // make a copy here because we don't want to mess with the original
+                // make a copy here because we don't want to mess with the original,
+                // as binaryops don't modify the original data
                 let lvalue: Value = Self::expr(ctx.clone(), *left).borrow().clone();
                 let rvalue: Value = Self::expr(ctx.clone(), *right).borrow().clone();
 
@@ -161,6 +140,26 @@ impl Interpreter {
                 StatementControl::EarlyReturn(v) => Rc::new(RefCell::new(v)),
                 _ => unreachable!(">//< I WAS THREE SHEDLETSKIES AWAY HOW DID BRO HIT ME??!")
             },
+
+            Expr::Ref(inner_expr) => {
+                let value = Self::expr(ctx.clone(), *inner_expr);
+                return Rc::new(RefCell::new(Value::Ref(value)))
+            },
+
+            Expr::Deref(inner_expr) => {
+                let evaluated = Self::expr(ctx.clone(), *inner_expr); // Rc<RefCell<Value>>
+
+                let inner_rc = {
+                    let borrowed = evaluated.borrow();       // Ref<Value>
+                    if let Value::Ref(inner) = &*borrowed { // match the Value inside
+                        Rc::clone(inner)                     // clone the Rc<Value> inside Ref
+                    } else {
+                        panic!("derefed non-ref value");
+                    }
+                };
+
+                return inner_rc; // Rc<Value>
+            },
         }
     }
     
@@ -178,14 +177,24 @@ impl Interpreter {
     pub fn stmt(ctx: Rc<RefCell<Context>>, stmt: Statement) -> StatementControl {
         match stmt {
             Statement::Assign { left, right } => {
-                let var = Self::expr(ctx.clone(), *left);
-                let lit = Self::expr(ctx.clone(), *right)
-                    .borrow()
-                    .clone();
+                let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *left);
+                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
 
-                *var.borrow_mut() = lit;
+                *var.borrow_mut() = lit.borrow().clone();
                 return StatementControl::Default
             },
+            
+            Statement::VarDeclaration { left, right } => {
+                let var: String = Self::expr(ctx.clone(), *left)
+                    .borrow()
+                    .into_id();
+
+                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
+
+                //ctx.borrow_mut().set(&var, lit.borrow().clone());
+                ctx.borrow_mut().declare(&var, lit);
+                return StatementControl::Default
+            }
 
             Statement::Expression(x) => {
                 Self::expr(ctx.clone(), x);
@@ -212,7 +221,8 @@ impl Interpreter {
             },
 
             Statement::If { condition, on_true } => {
-                let condition_return: bool = Self::expr(ctx.clone(), condition).borrow()
+                let condition_return: bool = Self::expr(ctx.clone(), condition)
+                    .borrow()
                     .truthiness();
 
                 if condition_return {
@@ -221,14 +231,21 @@ impl Interpreter {
 
                     for stmt in on_true.0 {
                         match Self::stmt(newctx.clone(), stmt) {
-                            StatementControl::Default => {}         // do nothing
-                            ctrl => return ctrl,  // return everything else
+                            StatementControl::Default => {}
+                            ctrl => return ctrl
                         }
                     }
                 };
                 return StatementControl::Default
             }
-        }
+
+            // nice to have for testing
+            Statement::Print { thing } => {
+                let to_print = Self::expr(ctx, *thing);
+                println!("{:?}", to_print.borrow());
+                return StatementControl::Default
+            }
+        };
     }
 
     /// Executes a `Block`

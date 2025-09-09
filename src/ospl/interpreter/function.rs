@@ -12,13 +12,26 @@ impl Interpreter {
     ///           This context is mutated
     /// * `spec` - The spec to unwrap
     /// * `args` - The args to unwrap with
-    pub fn destruct_into(ctx: Rc<RefCell<Context>>, spec: Vec<Subspec>, args: Vec<Rc<RefCell<Value>>>) {
-        debug_assert!(spec.len() == args.len());  // should ALWAYS be true
+    pub fn destruct_into(
+        ctx: Rc<RefCell<Context>>,
+        spec: Vec<Subspec>,
+        args: Vec<Rc<RefCell<Value>>>
+    ) -> () {
+        // should ALWAYS be true at runtime, otherwise someone fucked it up.
+        assert!(spec.len() == args.len());
 
         for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
             match subspec {
                 Subspec::Bind(key) => {
-                    ctx.borrow_mut().set(&key, arg.borrow().clone());
+                    ctx.borrow_mut().set(&key, 
+                        // OSPL passes by value by default.
+                        //
+                        // but if arg is a Ref, then the inner Rc gets shallow
+                        // cloned, we create a new `Value::Ref` to the same Rc.
+                        arg
+                        .borrow()
+                        .clone()
+                    );
                 },
                 Subspec::Destruct(tree) => Self::destruct_into(
                     ctx.clone(),
@@ -46,27 +59,26 @@ impl Interpreter {
     /// The return value of the function, if there is one, as `Option<Value>`
     pub fn do_function_call(
         ctx: Rc<RefCell<Context>>,
-        name: String,
+        f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>
     ) -> Option<Rc<RefCell<Value>>> {
-
         // create child context
-        let child_ctx = Rc::new(RefCell::new(Context::new(Some(ctx.clone()))));
-
-        // get the function Value from the context
-        let func_rc = ctx.borrow().get(&name).expect("expected ID"); // Rc<RefCell<Value>>
-        let func_ref = func_rc.borrow(); // Ref<Value>
+        let child_ctx = Rc::new(
+            RefCell::new(
+                Context::new(Some(ctx.clone()))));
 
         // match via reference
-        let (spec, body) = match &*func_ref {
-            Value::Function { spec, body } => (spec.clone(), body.clone()),
-            _ => panic!("expected function"),
+        let f_ref = f.borrow(); // keep Ref<Value> alive
+        let (spec, body) = match &*f_ref {
+            Value::Function { spec, body } => (spec, body),
+            _ => panic!(">//< tried to call non-function: {:#?}!", f_ref),
         };
 
         // assign arguments
-        Self::destruct_into(child_ctx.clone(), spec, args);
+        // cloning spec is not cheap, I don't like it but whatever
+        Self::destruct_into(child_ctx.clone(), spec.clone(), args);
 
         // run the function body
-        Self::block(child_ctx, body)
+        Self::block(child_ctx, body.clone())
     }
 }

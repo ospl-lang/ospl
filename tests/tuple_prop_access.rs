@@ -20,14 +20,12 @@ fn make_test_ast() -> Block {
                     )
                 )
             },
-            Statement::Print {
-                thing: Box::new(
-                    Expr::Property(
-                        Expr::var("t"),
-                        Expr::litstr("1"),
-                    )
+            Statement::Return(
+                Expr::Property(
+                    Expr::var("t"),
+                    Expr::litstr("1"),
                 )
-            }
+            )
         ]
     )
 }
@@ -39,8 +37,10 @@ fn tuple_prop_access() {
     let root: interpreter::Context = interpreter::Context::new(None);
     let ctx: Rc<RefCell<interpreter::Context>> = Rc::new(RefCell::new(root));
 
-    let _ = interpreter::Interpreter::block(
+    let result = interpreter::Interpreter::block(
         ctx,
         ast
-    );
+    ).unwrap();
+
+    assert!(*result.borrow() == Value::SignedQuadruleWord(2));
 }

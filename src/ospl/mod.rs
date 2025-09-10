@@ -55,9 +55,13 @@ pub enum Value {
         spec: Vec<Subspec>,
         body: Block,
     },
-    Object(HashMap<String, Rc<RefCell<Value>>>),
+    Object {
+        symbols: HashMap<String, Rc<RefCell<Value>>>,
+        class: Rc<RefCell<Value>>,
+    },
     Class {
         parents: Vec<Rc<RefCell<Value>>>,
+        symbols: HashMap<String, Rc<RefCell<Value>>>
     }
 }
 
@@ -140,6 +144,50 @@ impl Value {
             _ => true
         }
     }
+
+    fn deep_clone(&self) -> Value {
+        return match self {
+            // containers that need help
+            Value::Tuple(vec) => {
+                let new_vec = vec.iter()
+                    .map(|v| Rc::new(RefCell::new(v.borrow().deep_clone())))
+                    .collect();
+                return Value::Tuple(new_vec)
+            },
+            Value::Object { symbols, class} => {
+                let hm = symbols.clone();
+                return Value::Object {
+                    symbols: hm,
+                    class: class.clone()
+                }
+            },
+
+            // silly types
+            Value::Ref(rc) => Value::Ref(Rc::new(RefCell::new(rc.borrow().deep_clone()))),
+            
+            // stupid types
+            Value::String(s) => Value::String(s.clone()),
+
+            Value::Byte(w) => Value::Byte(*w),
+            Value::SignedByte(w) => Value::SignedByte(*w),
+
+            Value::Word(w) => Value::Word(*w),
+            Value::SignedWord(w) => Value::SignedWord(*w),
+
+            Value::DoubleWord(w) => Value::DoubleWord(*w),
+            Value::SignedDoubleWord(w) => Value::SignedDoubleWord(*w),
+
+            Value::QuadrupleWord(w) => Value::QuadrupleWord(*w),
+            Value::SignedQuadruleWord(w) => Value::SignedQuadruleWord(*w),
+
+            Value::Half(w) => Value::Half(*w),
+            Value::Single(w) => Value::Single(*w),
+            Value::Float(w) => Value::Float(*w),
+
+            // error
+            other @ _ => unimplemented!("Deep clone not implemented for: {:?}", other),
+        }
+    }
 }
 
 macro_rules! typical_op {
@@ -197,7 +245,7 @@ macro_rules! typical_cmp {
             (Value::Void, _)                                                => panic!(">//< can't compare to Void!"),
             (_, Value::Void)                                                => panic!(">//< can't compare with Void!"),
 
-            _ => panic!(">//< can't compare these types!"),
+            _ => panic!(">//< can't compare {:?} with {:?}", $lhs, $rhs),
         }
     }};
 }
@@ -269,6 +317,7 @@ pub enum Statement {
     If {
         condition: Expr,
         on_true: Block,
+        on_false: Option<Block>  // you don't need an else
     },
 }
 
@@ -293,6 +342,7 @@ pub enum Expr {
     Loop(Box<Block>),
     Deref(Box<Expr>),
     Ref(Box<Expr>),
+    Construct(Box<Expr>),
 }
 
 impl Expr {

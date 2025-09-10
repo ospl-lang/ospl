@@ -39,6 +39,16 @@ impl Interpreter {
         (a_value, b_key)
     }
 
+    fn execute_if_body(body: Block, newctx: Rc<RefCell<Context>>) -> Option<StatementControl> {
+        for stmt in body.0 {
+            match Self::stmt(newctx.clone(), stmt) {
+                StatementControl::Default => {}
+                ctrl => return Some(ctrl)
+            }
+        }
+        None
+    }
+
     /// Evaluates an `Expr`
     /// 
     /// # Arguments
@@ -160,9 +170,15 @@ impl Interpreter {
 
                 return inner_rc; // Rc<Value>
             },
+
+            Expr::Construct(inner_expr) => {
+                let evaluated = Self::expr(ctx.clone(), *inner_expr); // Rc<RefCell<Value>>
+
+                return Self::class_construct(ctx, evaluated)
+            }
         }
     }
-    
+
     /// Executes a `Statement`
     /// 
     /// # Arguments
@@ -220,22 +236,23 @@ impl Interpreter {
                 return StatementControl::Continue
             },
 
-            Statement::If { condition, on_true } => {
+            Statement::If { condition, on_true, on_false } => {
                 let condition_return: bool = Self::expr(ctx.clone(), condition)
                     .borrow()
                     .truthiness();
 
-                if condition_return {
-                    let newctx: Rc<RefCell<Context>> =
-                        Rc::new(RefCell::new(Context::new(Some(ctx.clone()))));
+                let newctx: Rc<RefCell<Context>> =
+                    Rc::new(RefCell::new(Context::new(Some(ctx.clone()))));
 
-                    for stmt in on_true.0 {
-                        match Self::stmt(newctx.clone(), stmt) {
-                            StatementControl::Default => {}
-                            ctrl => return ctrl
-                        }
+                if condition_return {
+                    if let Some(control) = Self::execute_if_body(on_true, newctx) {
+                        return control;
                     }
-                };
+                } else if let Some(block) = on_false {
+                    if let Some(control) = Self::execute_if_body(block, newctx) {
+                        return control;
+                    }
+                }
                 return StatementControl::Default
             }
 
@@ -273,3 +290,4 @@ impl Interpreter {
         return None
     }
 }
+

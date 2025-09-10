@@ -22,15 +22,20 @@ impl Interpreter {
 
         for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
             match subspec {
-                Subspec::Bind(key) => {
+                Subspec::BindRef(key) => {
                     ctx.borrow_mut().set(&key, 
-                        // OSPL passes by value by default.
-                        //
-                        // but if arg is a Ref, then the inner Rc gets shallow
-                        // cloned, we create a new `Value::Ref` to the same Rc.
+                        // this passes by reference
                         arg
                         .borrow()
                         .clone()
+                    );
+                },
+                Subspec::Bind(key) => {
+                    ctx.borrow_mut().set(&key, 
+                        // OSPL passes by value by default.
+                        arg
+                        .borrow()
+                        .deep_clone()
                     );
                 },
                 Subspec::Destruct(tree) => Self::destruct_into(

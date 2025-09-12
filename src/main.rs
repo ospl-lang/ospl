@@ -50,7 +50,8 @@ fn main() {
                                             },
                                             on_true: Block(vec![
                                                 Statement::Return(*Expr::var("i"))
-                                            ])
+                                            ]),
+                                            on_false: None
                                         },
                                     ])
                                 )
@@ -71,7 +72,7 @@ fn main() {
 
     println!("yay");
     // interpreter::Interpreter::stmt(ctx.clone(), stmt.clone());
-    interpreter::Interpreter::block(
+    /* interpreter::Interpreter::block(
         ctx,
         Block(vec![
             stmt.clone(),
@@ -84,5 +85,8 @@ fn main() {
                     ]
                 }
             ),
-        ]));
+        ])
+    ); */
+
+    parser::main();
 }

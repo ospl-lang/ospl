@@ -3,6 +3,12 @@ use std::rc::Rc;
 use super::*;
 
 impl Interpreter {
+    /// construct a class
+    /// 
+    /// this function operates in three steps:
+    /// 1. construct each parent class (if any)
+    /// 2. merge all properties into the new object
+    /// 3. call the class' `_init` function
     pub fn class_construct(ctx: Rc<RefCell<Context>>, cls: Rc<RefCell<Value>>) -> Rc<RefCell<Value>> {
         // Start with an empty object
         let obj = Rc::new(

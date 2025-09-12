@@ -13,6 +13,7 @@ pub enum Subspec {
 }
 
 pub mod interpreter;
+pub mod parser;
 
 ///////////////////////////////////////////////////////////////////////////////
 // values and types
@@ -37,7 +38,7 @@ pub enum Value {
     DoubleWord(u32),
     SignedDoubleWord(i32),
     QuadrupleWord(u64),
-    SignedQuadruleWord(i64),
+    SignedQuadrupleWord(i64),
 
     // can't actually use f16, as it is unstable.
     Half(f32),
@@ -98,7 +99,7 @@ impl Value {
             Self::DoubleWord(_) |
             Self::SignedDoubleWord(_) |
             Self::QuadrupleWord(_) |
-            Self::SignedQuadruleWord(_)
+            Self::SignedQuadrupleWord(_)
         )
     }
 
@@ -125,7 +126,7 @@ impl Value {
             Value::DoubleWord(n) => *n != 0,
             Value::SignedDoubleWord(n) => *n != 0,
             Value::QuadrupleWord(n) => *n != 0,
-            Value::SignedQuadruleWord(n) => *n != 0,
+            Value::SignedQuadrupleWord(n) => *n != 0,
 
             Value::Half(n) => *n != 0.0,
             Value::Single(n) => *n != 0.0,
@@ -178,7 +179,7 @@ impl Value {
             Value::SignedDoubleWord(w) => Value::SignedDoubleWord(*w),
 
             Value::QuadrupleWord(w) => Value::QuadrupleWord(*w),
-            Value::SignedQuadruleWord(w) => Value::SignedQuadruleWord(*w),
+            Value::SignedQuadrupleWord(w) => Value::SignedQuadrupleWord(*w),
 
             Value::Half(w) => Value::Half(*w),
             Value::Single(w) => Value::Single(*w),
@@ -201,7 +202,7 @@ macro_rules! typical_op {
             (Value::DoubleWord(a), Value::DoubleWord(b))                    => Value::DoubleWord(a $op b),
             (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => Value::SignedDoubleWord(a $op b),
             (Value::QuadrupleWord(a), Value::QuadrupleWord(b))              => Value::QuadrupleWord(a $op b),
-            (Value::SignedQuadruleWord(a), Value::SignedQuadruleWord(b))    => Value::SignedQuadruleWord(a $op b),
+            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))    => Value::SignedQuadrupleWord(a $op b),
             (Value::Half(a), Value::Half(b))                                => Value::Half(a $op b),
             (Value::Single(a), Value::Single(b))                            => Value::Single(a $op b),
             (Value::Float(a), Value::Float(b))                              => Value::Float(a $op b),
@@ -228,7 +229,7 @@ macro_rules! typical_cmp {
             (Value::DoubleWord(a), Value::DoubleWord(b)) => a $op b,
             (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b)) => a $op b,
             (Value::QuadrupleWord(a), Value::QuadrupleWord(b)) => a $op b,
-            (Value::SignedQuadruleWord(a), Value::SignedQuadruleWord(b)) => a $op b,
+            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b)) => a $op b,
             (Value::Half(a), Value::Half(b)) => a $op b,
             (Value::Single(a), Value::Single(b)) => a $op b,
             (Value::Float(a), Value::Float(b)) => a $op b,

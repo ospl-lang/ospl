@@ -1,4 +1,15 @@
-use crate::{Expr, Value};
+use crate::{ospl::{
+    interpreter::{
+        Context,
+        Interpreter
+    },
+    Expr,
+    Value
+}, Statement};
+
+use log::trace;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct Parser {
     input: String, // owned buffer
@@ -17,7 +28,9 @@ impl Parser {
         self.input = s.to_string(); // replace buffer
         self.pos = 0;
     }
+}
 
+impl Parser {
     fn peek(&self) -> Option<char> {
         return self.input[self.pos..].chars().next();
     }
@@ -28,6 +41,18 @@ impl Parser {
         return Some(c);
     }
 
+    fn peek_or_consume(&mut self, target: char) -> bool {
+        let c = self.peek()
+            .unwrap_or_else(|| self.parse_error("unexpected EOF"));
+
+        if c == target {
+            self.pos += c.len_utf8();
+            return true
+        } else {
+            return false
+        }
+    }
+
     fn consume_while<F>(&mut self, mut f: F) -> String
     where
         F: FnMut(char) -> bool,
@@ -35,21 +60,6 @@ impl Parser {
         let start = self.pos;
         while let Some(c) = self.peek() {
             if f(c) {
-                self.next_char();
-            } else {
-                break;
-            }
-        }
-        return self.input[start..self.pos].to_string();
-    }
-
-    fn consume_until<F>(&mut self, mut f: F) -> String
-    where
-        F: FnMut(char, &str) -> bool,
-    {
-        let start = self.pos;
-        while let Some(c) = self.peek() {
-            if f(c, &self.input[start..]) {
                 self.next_char();
             } else {
                 break;
@@ -71,8 +81,32 @@ impl Parser {
         }
     }
 
-    fn parse_error(&mut self, msg: &str) {
-        panic!("parse error at character {:?}: {}", self.pos, msg)
+    fn parse_error(&mut self, msg: &str) -> ! {
+        panic!(">//< syntax or parse error at character {}: {}", self.pos, msg)
+    }
+
+    fn expect_char(&mut self, target: char) -> Option<char> {
+        let next = self.next_char()
+                            .unwrap_or_else(|| self.parse_error(&format!(
+                                            "unexpected EOF, expected `{}`",
+                                            target)));
+
+        self.pos += next.len_utf8();
+
+        if next == target {
+            return Some(next)
+        } else {
+            return None
+        }
+    }
+
+    fn match_next(&mut self, thing: &str) -> bool {
+        if self.input[self.pos..].starts_with(thing) {
+            self.pos += thing.len();
+            return true
+        } else {
+            return false
+        }
     }
 
     fn find(&mut self, things: Vec<&str>) -> Option<String> {
@@ -92,7 +126,16 @@ impl Parser {
                 return Some(thing.to_string());
             }
         }
-        None
+        return None;
+    }
+
+    fn find_peek_or_consume(&mut self, things: Vec<&str>) -> Option<String> {
+        if let Some(x) = self.find_peek(things) {
+            self.pos += x.len();
+            return Some(x)
+        } else {
+            return None
+        }
     }
 
     pub fn skip_ws(&mut self) {
@@ -102,7 +145,7 @@ impl Parser {
 
 // === LITERALS ===
 impl Parser {
-    pub fn number_literal_whole(&mut self) -> Option<Value> {
+    fn number_literal_whole(&mut self) -> Option<Value> {
         // consume the number itself
         let numstr = self.consume_while(|c| c.is_ascii_digit());
         if numstr.is_empty() { return None; }
@@ -131,7 +174,7 @@ impl Parser {
         }
     }
 
-    pub fn identifier(&mut self) -> Option<String> {
+    fn identifier(&mut self) -> Option<String> {
         let mut id: String = String::new();
 
         // first char cannot have numbers, hence this special case here.
@@ -148,7 +191,7 @@ impl Parser {
         return Some(id);
     }
 
-    pub fn literal(&mut self) -> Option<Value> {
+    fn literal(&mut self) -> Option<Value> {
         if let Some(num) = self.attempt(Self::number_literal_whole) {
             return Some(num);
         }
@@ -156,63 +199,149 @@ impl Parser {
         else { None }
     }
 
-}
+    fn assignment(&mut self) -> Option<Statement> {
+        let id: String = self.identifier()?;
+        self.skip_ws();
+        self.expect_char(Self::ASSIGN_CHAR)?;
+        self.skip_ws();
+        let rhs: Expr = self.expr()?;
 
-// === BINARY OPERATIONS ===
-impl Parser {
-    fn binaryop(&mut self) -> Option<Expr> {
-        let mut lhs = self.primary()?;  // parse the first value
-
-        while let Some(op) = self.find(vec!["+", "-", "*", "/", "==", "!="]) {
-            let rhs = self.expr()?;  // parse next value
-            lhs = Expr::BinaryOp {
-                left: Box::new(lhs),
-                right: Box::new(rhs),
-                op,
-            };
-        }
-
-        Some(lhs)
+        return Some(Statement::Assign {
+            left: Box::new(
+                Expr::Literal(
+                    Value::String(id)
+                )
+            ),
+            right: Box::new(rhs)
+        });
     }
-}
 
-// === EXPRESSIONS ===
-impl Parser {
-    pub fn primary(&mut self) -> Option<Expr> {
-        if let Some(v) = self.attempt(Self::literal) {
-            return Some(Expr::Literal(v))
+    fn declaration(&mut self) -> Option<Statement> {
+        // all declarations start with def, if it doesn't, this clearly isn't
+        // a declaration.
+        if !self.match_next("def") { return None };
+        self.skip_ws();
+
+        // they're followed by a name
+        let id: String = self.identifier()?;
+        self.skip_ws();
+
+        // and an optional assignment
+        let mut initializer: Option<Expr> = None;
+        if self.peek_or_consume('=') {
+            self.skip_ws();
+            initializer = Some(self.expr()?);
+            self.skip_ws();
         }
 
-        else if let Some(v) = self.attempt(Self::identifier) {
-            return Some(
-                Expr::Variable(
-                    Box::new(
-                        Expr::Literal(
-                            Value::String(v)
-                        )
+        // construct a statement
+        return Some(Statement::VarDeclaration {
+            left: Box::new(
+                Expr::Literal(
+                    Value::String(id)
+                )
+            ),
+            right: Box::new(
+                initializer
+                .unwrap_or_else(||  // avoid unneeded work
+                    Expr::Literal(
+                        Value::Null
                     )
                 )
             )
-        }
-
-        else { None }
-    }
-
-    pub fn expr(&mut self) -> Option<Expr> {
-        if let Some(v) = self.primary() {
-            return Some(v)
-        }
-
-        else if let Some(v) = self.attempt(Self::binaryop) {
-            return Some(v)
-        }
-
-        else { None }
+        })
     }
 }
 
+impl Parser {
+    const GROUP_CHAR_START: char = '|';
+    const GROUP_CHAR_END: char = '\\';
+    const ASSIGN_CHAR: char = '=';
+
+    /// THE THE FUNCTION
+    pub fn expr(&mut self) -> Option<Expr> {
+        trace!("parse LHS");
+        // ==== DO THE LHS ====
+        let mut lhs = if self.peek_or_consume(Self::GROUP_CHAR_START) {
+            // ==== GROUPING ====
+            trace!("group");
+            let inner = self.expr()?;                       // parse inside group
+            self.expect_char(Self::GROUP_CHAR_END)?;
+
+            inner
+        } else if let Some(v) = self.attempt(Self::literal) {
+            // ==== LITERALS ====
+            trace!("literal");
+
+            Expr::Literal(v)
+        } else if let Some(id) = self.attempt(Self::identifier) {
+            // ==== VARS ====
+            trace!("variable");
+
+            Expr::Variable(Box::new(Expr::Literal(Value::String(id))))
+        } else {
+            // WE HAVE NO IDEA WHAT THE LHS IS
+            trace!("I DONT KNOW WHAT THE LHS IS");
+
+            return None;
+        };
+
+        // ==== BINARY OPS ====
+        self.skip_ws();
+        while let Some(op) = self.find_peek_or_consume(vec!["+", "-", "*", "/", ">=", "<=", "==", "!=", "<", ">"]) {
+            trace!("binaryop: {}", op);
+            // parse RHS
+            self.skip_ws();
+            if let Some(rhs) = self.expr() {
+                lhs = Expr::BinaryOp {
+                    left: Box::new(lhs),
+                    right: Box::new(rhs),
+                    op,
+                };
+            } else {
+                trace!("failed to parse RHS after operator");
+                break;  // failed to parse RHS after operator
+            }
+        }
+
+        return Some(lhs);
+    }
+
+    pub fn stmt(&mut self) -> Option<Statement> {
+        // ==== ASSIGNMENT ====
+        if let Some(v) = self.attempt(Self::assignment) {
+            return Some(v);
+        }
+
+        // ==== DECLARATION ====
+        else if let Some(v) = self.attempt(Self::declaration) {
+            return Some(v)
+        };
+
+        // we don't know
+        return None
+    }
+}
+
+fn exe(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
+    p.feed(s);
+    let ast = p.stmt().expect("bad AST");
+
+    //let result = Interpreter::expr(ctx.clone(), ast);
+    let result = Interpreter::stmt(ctx.clone(), ast);
+    println!("{:#?}", result);
+    println!("{:#?}", ctx);
+}
+
 pub fn main() {
-    let mut p = Parser::new();
-    p.feed("a+1d-2d");
-    println!("{:?}", p.expr());
+    env_logger::init();
+
+    // initialize
+    let ctx: Rc<RefCell<Context>> = Rc::new(RefCell::new(Context::new(None)));
+
+    // parse
+    let mut p: Parser = Parser::new();
+    exe(ctx.clone(), &mut p, "def x = 9d");
+    exe(ctx.clone(), &mut p, "def y = 10d");
+    exe(ctx.clone(), &mut p, "def z = x + y");
 }

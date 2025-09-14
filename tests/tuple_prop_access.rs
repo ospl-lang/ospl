@@ -12,9 +12,9 @@ fn make_test_ast() -> Block {
                     Expr::Literal(
                         Value::Tuple(
                             vec![
-                                Rc::new(RefCell::new(Value::SignedQuadruleWord(1))),
-                                Rc::new(RefCell::new(Value::SignedQuadruleWord(2))),
-                                Rc::new(RefCell::new(Value::SignedQuadruleWord(3))),
+                                Rc::new(RefCell::new(Value::SignedQuadrupleWord(1))),
+                                Rc::new(RefCell::new(Value::SignedQuadrupleWord(2))),
+                                Rc::new(RefCell::new(Value::SignedQuadrupleWord(3))),
                             ]
                         )
                     )
@@ -42,5 +42,5 @@ fn tuple_prop_access() {
         ast
     ).unwrap();
 
-    assert!(*result.borrow() == Value::SignedQuadruleWord(2));
+    assert!(*result.borrow() == Value::SignedQuadrupleWord(2));
 }

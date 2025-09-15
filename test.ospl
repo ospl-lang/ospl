@@ -1,0 +1,6 @@
+{
+    def x = 9;
+    def y = 10;
+    def z = x + y;
+    print z;
+}

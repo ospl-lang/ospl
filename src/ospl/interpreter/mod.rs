@@ -261,7 +261,7 @@ impl Interpreter {
             // nice to have for testing
             Statement::Print { thing } => {
                 let to_print = Self::expr(ctx, *thing);
-                println!("{:?}", to_print.borrow());
+                println!("{}", to_print.borrow());
                 return StatementControl::Default
             }
         };

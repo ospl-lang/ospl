@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, ops::{Add, Div, Mul, Sub}, rc::Rc
+    cell::RefCell, cmp::Ordering, collections::HashMap, fmt::Display, ops::{Add, Div, Mul, Sub}, rc::Rc
 };
 
 /// a function spec
@@ -202,7 +202,9 @@ macro_rules! typical_op {
             (Value::DoubleWord(a), Value::DoubleWord(b))                    => Value::DoubleWord(a $op b),
             (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => Value::SignedDoubleWord(a $op b),
             (Value::QuadrupleWord(a), Value::QuadrupleWord(b))              => Value::QuadrupleWord(a $op b),
-            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))    => Value::SignedQuadrupleWord(a $op b),
+            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))  => Value::SignedQuadrupleWord(a $op b),
+
+            // float types
             (Value::Half(a), Value::Half(b))                                => Value::Half(a $op b),
             (Value::Single(a), Value::Single(b))                            => Value::Single(a $op b),
             (Value::Float(a), Value::Float(b))                              => Value::Float(a $op b),
@@ -214,7 +216,7 @@ macro_rules! typical_op {
             (Value::Void, _)                                                => panic!(">//< can't operate to Void!"),
             (_, Value::Void)                                                => panic!(">//< can't operate with Void!"),
 
-            _ => panic!(">//< I don't know how to do this operation!")
+            _ => panic!("I don't know how to do this operation on these types (possible type saftey issue)!")
         }
     }};
 }
@@ -222,22 +224,22 @@ macro_rules! typical_op {
 macro_rules! typical_cmp {
     ($lhs:expr, $rhs:expr, $op:tt) => {{
         match ($lhs, $rhs) {
-            (Value::Byte(a), Value::Byte(b)) => a $op b,
-            (Value::SignedByte(a), Value::SignedByte(b)) => a $op b,
-            (Value::Word(a), Value::Word(b)) => a $op b,
-            (Value::SignedWord(a), Value::SignedWord(b)) => a $op b,
-            (Value::DoubleWord(a), Value::DoubleWord(b)) => a $op b,
-            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b)) => a $op b,
-            (Value::QuadrupleWord(a), Value::QuadrupleWord(b)) => a $op b,
-            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b)) => a $op b,
-            (Value::Half(a), Value::Half(b)) => a $op b,
-            (Value::Single(a), Value::Single(b)) => a $op b,
-            (Value::Float(a), Value::Float(b)) => a $op b,
+            (Value::Byte(a), Value::Byte(b))                                => a $op b,
+            (Value::SignedByte(a), Value::SignedByte(b))                    => a $op b,
+            (Value::Word(a), Value::Word(b))                                => a $op b,
+            (Value::SignedWord(a), Value::SignedWord(b))                    => a $op b,
+            (Value::DoubleWord(a), Value::DoubleWord(b))                    => a $op b,
+            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => a $op b,
+            (Value::QuadrupleWord(a), Value::QuadrupleWord(b))              => a $op b,
+            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))  => a $op b,
+            (Value::Half(a), Value::Half(b))                                => a $op b,
+            (Value::Single(a), Value::Single(b))                            => a $op b,
+            (Value::Float(a), Value::Float(b))                              => a $op b,
 
             // non number types
-            (Value::Tuple(a), Value::Tuple(b)) => a $op b,
-            (Value::String(a), Value::String(b)) => a $op b,
-            (Value::Bool(x), Value::Bool(y)) => x $op y,
+            (Value::Tuple(a), Value::Tuple(b))                              => a $op b,
+            (Value::String(a), Value::String(b))                            => a $op b,
+            (Value::Bool(x), Value::Bool(y))                                => x $op y,
 
             // stuff you CANNOT do
             (Value::Null, _)                                                => panic!(">//< can't compare to Null!"),
@@ -246,7 +248,7 @@ macro_rules! typical_cmp {
             (Value::Void, _)                                                => panic!(">//< can't compare to Void!"),
             (_, Value::Void)                                                => panic!(">//< can't compare with Void!"),
 
-            _ => panic!(">//< can't compare {:?} with {:?}", $lhs, $rhs),
+            _                                                               => panic!(">//< can't compare {:?} with {:?}", $lhs, $rhs),
         }
     }};
 }
@@ -257,11 +259,35 @@ impl PartialEq for Value {
     fn ne(&self, other: &Self) -> bool { typical_cmp!(self, other, !=) }
 }
 
+impl PartialOrd for Value {
+    fn partial_cmp(&self, _: &Self) -> Option<Ordering> {
+        unreachable!("apparently you broke the parser so bad it preformed an invalid comparison");
+    }
+
+    fn le(&self, other: &Self) -> bool { typical_cmp!(self, other, <=) }
+    fn lt(&self, other: &Self) -> bool { typical_cmp!(self, other, <) }
+    fn gt(&self, other: &Self) -> bool { typical_cmp!(self, other, >) }
+    fn ge(&self, other: &Self) -> bool { typical_cmp!(self, other, >=) }
+}
+
 impl Add for Value {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         return match (&self, &rhs) {
             (Self::String(a), Self::String(b)) => Self::String(a.to_owned() + b.as_str()),
+            (Self::Tuple(a), b @ _) => Self::Tuple({
+                let mut cln = a.clone();
+                
+                cln.push(
+                    Rc::new(
+                        RefCell::new(
+                            b.clone()
+                        )
+                    )
+                );
+                
+                cln
+            }),
             _ => typical_op!(self, rhs, +)
         }
     }
@@ -285,6 +311,32 @@ impl Mul for Value {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         return typical_op!(self, rhs, *)
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let thing_to_write = match self {
+            Self::Bool(b) => if *b { "true" } else { "false" },
+
+            Self::Byte(n) => &n.to_string(),
+            Self::SignedByte(n) => &n.to_string(),
+            Self::Word(n) => &n.to_string(),
+            Self::SignedWord(n) => &n.to_string(),
+            Self::DoubleWord(n) => &n.to_string(),
+            Self::SignedDoubleWord(n) => &n.to_string(),
+            Self::QuadrupleWord(n) => &n.to_string(),
+            Self::SignedQuadrupleWord(n) => &n.to_string(),
+            Self::Half(n) => &n.to_string(),
+            Self::Single(n) => &n.to_string(),
+            Self::Float(n) => &n.to_string(),
+
+            Self::Null => "null",
+            Self::Void => "void",
+
+            other @ _ => &other.to_string()  // attempt at conversion
+        };
+        write!(f, "{}", thing_to_write)
     }
 }
 

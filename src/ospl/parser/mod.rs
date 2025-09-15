@@ -5,9 +5,8 @@ use crate::{ospl::{
     },
     Expr,
     Value
-}, Statement};
+}, Block, Statement};
 
-use log::trace;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -91,8 +90,6 @@ impl Parser {
                                             "unexpected EOF, expected `{}`",
                                             target)));
 
-        self.pos += next.len_utf8();
-
         if next == target {
             return Some(next)
         } else {
@@ -145,15 +142,29 @@ impl Parser {
 
 // === LITERALS ===
 impl Parser {
+    fn number_literal_whole_bad(&mut self, numstr: &str) -> Option<Value> {
+            // try to just parse as a `SignedDoubleWord`
+            if let Ok(attempt) = numstr.parse::<i32>() {
+                return Some(Value::SignedDoubleWord(attempt))
+            } else {
+                // this literally CANNOT be a number, at least it's not a valid
+                // i32. DO NOT BE FOOLED, THIS IS IN FACT REACHABLE.
+                // If you trigger it, you're REALLY STUPID and tried to write
+                // a number bigger than 2^31
+                return None
+            }
+    }
+
     fn number_literal_whole(&mut self) -> Option<Value> {
         // consume the number itself
         let numstr = self.consume_while(|c| c.is_ascii_digit());
         if numstr.is_empty() { return None; }
 
         // following it should be the postfix
+        // spaces are NOT allowed between the postfix and digits!
         if let Some(postfix) = self.next_char() {
             return match postfix {
-                // temporary but might just become official syntax
+                // ykw what this is just official now whatever
                 'b' => Some(Value::Byte(numstr.parse::<u8>().expect("expected valid u8"))),
                 'B' => Some(Value::SignedByte(numstr.parse::<i8>().expect("expected valid i8"))),
 
@@ -166,14 +177,82 @@ impl Parser {
                 'q' => Some(Value::QuadrupleWord(numstr.parse::<u64>().expect("expected valid u64"))),
                 'Q' => Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().expect("expected valid i64"))),
 
-                _ => None
+                _ => self.number_literal_whole_bad(&numstr),
             }
         } else {
-            // TODO: handle this correctly
-            unimplemented!("non-postfix number not implemented")
+            return self.number_literal_whole_bad(&numstr);
         }
     }
 
+    /// parse a float
+    fn number_literal_fraction(&mut self) -> Option<Value> {
+        // consume the whole part
+        let numstr: String = self.consume_while(|c| c.is_ascii_digit() || c == '.');
+        if numstr.is_empty() { return None; }
+
+        if let Some(postfix) = self.next_char() {
+            return match postfix {
+                // duplicated because no f16 type!
+                'h' => Some(Value::Half(numstr.parse().expect("expected valid f32"))),
+                's' => Some(Value::Single(numstr.parse().expect("expected valid f32"))),
+
+                // 64-bit floats
+                'f' => Some(Value::Float(numstr.parse().expect("expected valid f64"))),
+                _ => None
+            }
+        } else {
+            // if we don't see a postfix, assume we want a 64-bit float
+            if let Ok(attempt) = numstr.parse::<f64>() {
+                return Some(Value::Float(attempt));
+            } else {
+                // this is technically reachable if you wrote a MASSIVE NUMBER
+                // but that number will probably take more digits to write than
+                // atoms in the universe, so as far as I'm concerned, this is...
+                unreachable!(
+                    "you wrote a float that doesn't parse as a float ({}). {}",
+                    numstr,
+                    "TELL ME YOUR SECRETS MAGIC MAN",
+                )
+            }
+        }
+    }
+
+    fn block(&mut self) -> Option<Block> {
+        self.expect_char('{')?;
+        self.skip_ws();
+
+        let stmts = self.stmts()?;
+
+        return Some(Block(stmts));
+    }
+
+    fn stmts(&mut self) -> Option<Vec<Statement>> {
+        let mut stmts: Vec<Statement> = Vec::new();
+        loop {
+            self.skip_ws();
+            match self.peek() {
+                Some('}') => {
+                    self.pos += 1;
+                    break;
+                },
+                Some(';') => {
+                    self.pos += 1;
+                    continue;
+                }
+                Some(_) => {
+                    let stmt = self.stmt()?;  // parses the statement
+                    stmts.push(stmt);
+    
+                    // now handle the separator
+                    self.skip_ws();
+                },
+                _ => panic!("unexpected EOF in block!")
+            }
+        }
+        self.skip_ws();
+        Some(stmts)
+    }
+    
     fn identifier(&mut self) -> Option<String> {
         let mut id: String = String::new();
 
@@ -196,7 +275,35 @@ impl Parser {
             return Some(num);
         }
 
-        else { None }
+        else if let Some(num) = self.attempt(Self::number_literal_fraction) {
+            return Some(num);
+        }
+
+        else if let Some(v) = self.find_peek_or_consume(vec!["void", "null", "true", "false"]) {
+            return match v.as_ref() {
+                "void" => Some(Value::Void),
+                "null" => Some(Value::Null),
+                "true" => Some(Value::Bool(true)),
+                "false" => Some(Value::Bool(false)),
+                _ => None
+            };
+        }
+
+        else { return None; }  // makes it here
+    }
+
+    fn print(&mut self) -> Option<Statement> {
+        self.skip_ws();
+        if !self.match_next("print") {
+            return None
+        }
+
+        self.skip_ws();
+        let ex: Expr = self.expr()?;
+
+        return Some(Statement::Print {
+            thing: Box::new(ex)
+        });
     }
 
     fn assignment(&mut self) -> Option<Statement> {
@@ -219,7 +326,9 @@ impl Parser {
     fn declaration(&mut self) -> Option<Statement> {
         // all declarations start with def, if it doesn't, this clearly isn't
         // a declaration.
-        if !self.match_next("def") { return None };
+        if !self.match_next("def") {
+            return None
+        };
         self.skip_ws();
 
         // they're followed by a name
@@ -228,9 +337,9 @@ impl Parser {
 
         // and an optional assignment
         let mut initializer: Option<Expr> = None;
-        if self.peek_or_consume('=') {
+        if self.peek_or_consume(Self::ASSIGN_CHAR) {
             self.skip_ws();
-            initializer = Some(self.expr()?);
+            initializer = Some(self.expr().unwrap());
             self.skip_ws();
         }
 
@@ -254,42 +363,39 @@ impl Parser {
 }
 
 impl Parser {
-    const GROUP_CHAR_START: char = '|';
-    const GROUP_CHAR_END: char = '\\';
+    const GROUP_CHAR_START: &str = "(*";
+    const GROUP_CHAR_END: &str = "*)";
+
     const ASSIGN_CHAR: char = '=';
 
     /// THE THE FUNCTION
     pub fn expr(&mut self) -> Option<Expr> {
-        trace!("parse LHS");
         // ==== DO THE LHS ====
-        let mut lhs = if self.peek_or_consume(Self::GROUP_CHAR_START) {
+        let mut lhs = if self.match_next(Self::GROUP_CHAR_START) {
             // ==== GROUPING ====
-            trace!("group");
+            self.skip_ws();
             let inner = self.expr()?;                       // parse inside group
-            self.expect_char(Self::GROUP_CHAR_END)?;
+            self.skip_ws();
 
-            inner
+            if self.match_next(Self::GROUP_CHAR_END) { inner }
+            else { panic!("bad group") }
         } else if let Some(v) = self.attempt(Self::literal) {
             // ==== LITERALS ====
-            trace!("literal");
-
             Expr::Literal(v)
         } else if let Some(id) = self.attempt(Self::identifier) {
             // ==== VARS ====
-            trace!("variable");
-
             Expr::Variable(Box::new(Expr::Literal(Value::String(id))))
         } else {
             // WE HAVE NO IDEA WHAT THE LHS IS
-            trace!("I DONT KNOW WHAT THE LHS IS");
-
             return None;
         };
 
         // ==== BINARY OPS ====
         self.skip_ws();
-        while let Some(op) = self.find_peek_or_consume(vec!["+", "-", "*", "/", ">=", "<=", "==", "!=", "<", ">"]) {
-            trace!("binaryop: {}", op);
+        while let Some(op) = self.find_peek_or_consume(vec![
+            "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", "<", ">",
+            "|", "||", "&", "&&"]) {
+            
             // parse RHS
             self.skip_ws();
             if let Some(rhs) = self.expr() {
@@ -299,7 +405,6 @@ impl Parser {
                     op,
                 };
             } else {
-                trace!("failed to parse RHS after operator");
                 break;  // failed to parse RHS after operator
             }
         }
@@ -315,33 +420,61 @@ impl Parser {
 
         // ==== DECLARATION ====
         else if let Some(v) = self.attempt(Self::declaration) {
+            return Some(v);
+        }
+
+        // ==== PRINT =====
+        else if let Some(v) = self.attempt(Self::print) {
             return Some(v)
-        };
+        }
 
         // we don't know
-        return None
+        return None;
     }
 }
 
-fn exe(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
+pub fn stmt(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     let ast = p.stmt().expect("bad AST");
 
-    //let result = Interpreter::expr(ctx.clone(), ast);
     let result = Interpreter::stmt(ctx.clone(), ast);
     println!("{:#?}", result);
     println!("{:#?}", ctx);
 }
 
-pub fn main() {
-    env_logger::init();
+pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
+    p.feed(s);
+    let ast = p.expr().expect("bad AST");
 
+    let result = Interpreter::expr(ctx.clone(), ast);
+    println!("{:#?}", result);
+    println!("{:#?}", ctx);
+}
+
+pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
+    p.feed(s);
+    p.skip_ws();  // go to the first meaningful item
+    let ast = p.block().expect("no fucking AST");
+
+    let result = Interpreter::block(ctx.clone(), ast);
+    /* println!("{:#?}", result);
+    println!("{:#?}", ctx); */
+}
+
+pub fn main() {
     // initialize
     let ctx: Rc<RefCell<Context>> = Rc::new(RefCell::new(Context::new(None)));
 
     // parse
     let mut p: Parser = Parser::new();
-    exe(ctx.clone(), &mut p, "def x = 9d");
-    exe(ctx.clone(), &mut p, "def y = 10d");
-    exe(ctx.clone(), &mut p, "def z = x + y");
+    /* stmt(ctx.clone(), &mut p, "def x = 9d");
+    stmt(ctx.clone(), &mut p, "def y = 10d");
+    stmt(ctx.clone(), &mut p, "def z = x + y"); */
+
+    block(ctx.clone(), &mut p, "
+    {
+        def x = 9;
+        def y=10;
+        def z=x+y;
+    }");
 }

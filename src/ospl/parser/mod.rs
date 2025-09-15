@@ -5,7 +5,7 @@ use crate::{ospl::{
     },
     Expr,
     Value
-}, Block, Statement};
+}, Block, Statement, Subspec};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -81,7 +81,12 @@ impl Parser {
     }
 
     fn parse_error(&mut self, msg: &str) -> ! {
-        panic!(">//< syntax or parse error at character {}: {}", self.pos, msg)
+        panic!("syntax or parse error at char {} (`{}` near `{}`...): {}",
+            self.pos,
+            &self.input[self.pos..self.pos+1],
+            &self.input[self.pos..self.pos+24].trim(),
+            msg
+        )
     }
 
     fn expect_char(&mut self, target: char) -> Option<char> {
@@ -207,7 +212,7 @@ impl Parser {
             } else {
                 // this is technically reachable if you wrote a MASSIVE NUMBER
                 // but that number will probably take more digits to write than
-                // atoms in the universe, so as far as I'm concerned, this is...
+                // atoms in the universe, so as far as I'm concerned, this is
                 unreachable!(
                     "you wrote a float that doesn't parse as a float ({}). {}",
                     numstr,
@@ -215,6 +220,75 @@ impl Parser {
                 )
             }
         }
+    }
+
+    fn subspec(&mut self) -> Option<Subspec> {
+        // BASE CASE(s)
+        if let Some(id) = self.attempt(Self::identifier) {
+            // we do a binding
+            return Some(Subspec::Bind(id))
+        }
+
+        else if self.peek_or_consume('$') {
+            // we bind by reference
+            let Some(id) = self.attempt(Self::identifier)
+            else { return None };
+
+            return Some(Subspec::BindRef(id));
+        }
+
+        // RECURSIVE CASES
+        else if self.peek_or_consume('(') {
+            // it's a destruction
+            return Some(
+                Subspec::Destruct(
+                    self.spec_def().expect("a")
+                )
+            )
+        }
+
+        else { None }
+    }
+
+    fn spec_def(&mut self) -> Option<Vec<Subspec>> {
+        self.expect_char('(')?;
+
+        let mut spec: Vec<Subspec> = Vec::new();
+        loop {
+            self.skip_ws();
+            match self.peek() {
+                Some(')') => {
+                    self.pos += 1;
+                    break;
+                },
+                Some(_) => {
+                    let value = self.subspec()?;
+                    spec.push(value);
+                }
+                _ => self.parse_error("unexpected EOF")
+            }
+        }
+
+        return Some(spec)
+    }
+
+    fn function_literal(&mut self) -> Option<Value> {
+        // use a space here because it's a keyword
+        if !self.match_next("fn ") {
+            return None
+        }
+
+        self.skip_ws();
+        let spec: Vec<Subspec> = self.spec_def()?;
+        self.skip_ws();
+        let block: Block = self.block()?;
+
+        return Some(
+            Value::Function {
+                spec: spec,
+                body: block
+            }
+        )
     }
 
     fn block(&mut self) -> Option<Block> {
@@ -246,7 +320,7 @@ impl Parser {
                     // now handle the separator
                     self.skip_ws();
                 },
-                _ => panic!("unexpected EOF in block!")
+                _ => self.parse_error("unexpected EOF")
             }
         }
         self.skip_ws();
@@ -270,26 +344,81 @@ impl Parser {
         return Some(id);
     }
 
-    fn literal(&mut self) -> Option<Value> {
+    fn tuple_literal(&mut self) -> Option<Expr> {
+        self.expect_char('(')?;
+
+        let mut elements: Vec<Rc<RefCell<Expr>>> = Vec::new();
+        loop {
+            self.skip_ws();
+            match self.peek() {
+                Some(')') => {
+                    self.pos += 1;
+                    break;
+                },
+                Some(',') => {
+                    self.pos += 1;
+                    continue;
+                }
+                Some(_) => {
+                    let element = Rc::new(
+                        RefCell::new(
+                            self.expr()?
+                        )
+                    );  // parses the statement
+                    elements.push(element);
+    
+                    // now handle the separator
+                    self.skip_ws();
+                },
+                _ => self.parse_error("unexpected EOF")
+            }
+        }
+        self.skip_ws();
+        return Some(
+            Expr::TupleLiteral(elements)
+        );
+    }
+
+    fn literal(&mut self) -> Option<Expr> {
         if let Some(num) = self.attempt(Self::number_literal_whole) {
-            return Some(num);
+            return Some(
+                Expr::Literal(num)
+            );
         }
 
         else if let Some(num) = self.attempt(Self::number_literal_fraction) {
-            return Some(num);
+            return Some(
+                Expr::Literal(num)
+            );
         }
 
         else if let Some(v) = self.find_peek_or_consume(vec!["void", "null", "true", "false"]) {
             return match v.as_ref() {
-                "void" => Some(Value::Void),
-                "null" => Some(Value::Null),
-                "true" => Some(Value::Bool(true)),
-                "false" => Some(Value::Bool(false)),
+                "void" => Some(
+                    Expr::Literal(Value::Void)
+                ),
+                "null" => Some(
+                    Expr::Literal(Value::Null)
+                ),
+                "true" => Some(
+                    Expr::Literal(Value::Bool(true))
+                ),
+                "false" => Some(
+                    Expr::Literal(Value::Bool(false))
+                ),
                 _ => None
             };
         }
 
-        else { return None; }  // makes it here
+        else if let Some(func) = self.attempt(Self::function_literal) {
+            return Some(Expr::Literal(func))
+        }
+
+        else if let Some(tuple) = self.attempt(Self::tuple_literal) {
+            return Some(tuple);
+        }
+
+        else { return None; }
     }
 
     fn print(&mut self) -> Option<Statement> {
@@ -326,7 +455,8 @@ impl Parser {
     fn declaration(&mut self) -> Option<Statement> {
         // all declarations start with def, if it doesn't, this clearly isn't
         // a declaration.
-        if !self.match_next("def") {
+        // use a space here because it's a keyword
+        if !self.match_next("def ") {
             return None
         };
         self.skip_ws();
@@ -368,10 +498,9 @@ impl Parser {
 
     const ASSIGN_CHAR: char = '=';
 
-    /// THE THE FUNCTION
-    pub fn expr(&mut self) -> Option<Expr> {
+    pub fn primary_expr(&mut self) -> Option<Expr> {
         // ==== DO THE LHS ====
-        let mut lhs = if self.match_next(Self::GROUP_CHAR_START) {
+        let lhs = if self.match_next(Self::GROUP_CHAR_START) {
             // ==== GROUPING ====
             self.skip_ws();
             let inner = self.expr()?;                       // parse inside group
@@ -381,7 +510,7 @@ impl Parser {
             else { panic!("bad group") }
         } else if let Some(v) = self.attempt(Self::literal) {
             // ==== LITERALS ====
-            Expr::Literal(v)
+            v
         } else if let Some(id) = self.attempt(Self::identifier) {
             // ==== VARS ====
             Expr::Variable(Box::new(Expr::Literal(Value::String(id))))
@@ -390,7 +519,15 @@ impl Parser {
             return None;
         };
 
+        return Some(lhs)
+    }
+
+    /// THE THE FUNCTION
+    pub fn expr(&mut self) -> Option<Expr> {
+        let mut lhs: Expr = self.primary_expr()?;
+
         // ==== BINARY OPS ====
+        let mut is_binaryop = false;
         self.skip_ws();
         while let Some(op) = self.find_peek_or_consume(vec![
             "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", "<", ">",
@@ -404,9 +541,36 @@ impl Parser {
                     right: Box::new(rhs),
                     op,
                 };
+                is_binaryop = true;
             } else {
                 break;  // failed to parse RHS after operator
             }
+        }
+
+        if is_binaryop {
+            return Some(lhs);
+        }
+
+        // ==== FUNCTION CALLS ====
+        // after parsing LHS, there may be a juxtaposition.
+        // Meaning this is a function call!
+        // only primaries are valid juxtapositions for... reasons...
+        let mut is_fncall = false;
+        let mut fnargs: Vec<Expr> = Vec::new();
+        while let Some(next) = self.literal() {
+            fnargs.push(next);
+            self.skip_ws();
+
+            is_fncall = true;
+        }
+
+        if is_fncall {
+            return Some(
+                Expr::FunctionCall {
+                    left: Box::new(lhs),
+                    args: fnargs
+                }
+            );
         }
 
         return Some(lhs);
@@ -454,7 +618,7 @@ pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
-    let ast = p.block().expect("no fucking AST");
+    let ast = p.block().expect("invalid or no AST.");
 
     let result = Interpreter::block(ctx.clone(), ast);
     /* println!("{:#?}", result);

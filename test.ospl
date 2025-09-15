@@ -1,6 +1,6 @@
 {
-    def x = 9;
-    def y = 10;
-    def z = x + y;
-    print z;
+    def add = fn (a, b) {
+        def z = a + b;
+    };
+    def result = add (1, 2);
 }

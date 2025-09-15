@@ -396,6 +396,9 @@ pub enum Expr {
     Deref(Box<Expr>),
     Ref(Box<Expr>),
     Construct(Box<Expr>),
+
+    // stupid motherfuckers that don't want to follow the rules
+    TupleLiteral(Vec<Rc<RefCell<Expr>>>),
 }
 
 impl Expr {

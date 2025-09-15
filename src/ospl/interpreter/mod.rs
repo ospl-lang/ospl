@@ -177,6 +177,15 @@ impl Interpreter {
                 let evaluated = Self::expr(ctx.clone(), *inner_expr); // Rc<RefCell<Value>>
 
                 return Self::class_construct(ctx, evaluated)
+            },
+
+            Expr::TupleLiteral(inner_exprs) => {
+                let mut values: Vec<Rc<RefCell<Value>>> = Vec::new();
+                for expr in inner_exprs {
+                    let val = Self::expr(ctx.clone(), expr.borrow().clone());
+                    values.push(val);
+                }
+                return Rc::new(RefCell::new(Value::Tuple(values)));
             }
         }
     }

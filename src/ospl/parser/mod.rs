@@ -167,21 +167,22 @@ impl Parser {
 
         // following it should be the postfix
         // spaces are NOT allowed between the postfix and digits!
-        if let Some(postfix) = self.next_char() {
+        if let Some(postfix) = self.peek() {
             return match postfix {
                 // ykw what this is just official now whatever
-                'b' => Some(Value::Byte(numstr.parse::<u8>().expect("expected valid u8"))),
-                'B' => Some(Value::SignedByte(numstr.parse::<i8>().expect("expected valid i8"))),
+                'b' => { self.pos += 'b'.len_utf8(); Some(Value::Byte(numstr.parse::<u8>().expect("expected valid u8"))) },
+                'B' => { self.pos += 'B'.len_utf8(); Some(Value::SignedByte(numstr.parse::<i8>().expect("expected valid i8"))) },
 
-                'w' => Some(Value::Word(numstr.parse::<u16>().expect("expected valid u16"))),
-                'W' => Some(Value::SignedWord(numstr.parse::<i16>().expect("expected valid i16"))),
+                'w' => { self.pos += 'w'.len_utf8(); Some(Value::Word(numstr.parse::<u16>().expect("expected valid u16"))) },
+                'W' => { self.pos += 'W'.len_utf8(); Some(Value::SignedWord(numstr.parse::<i16>().expect("expected valid i16"))) },
 
-                'd' => Some(Value::DoubleWord(numstr.parse::<u32>().expect("expected valid u32"))),
-                'D' => Some(Value::SignedDoubleWord(numstr.parse::<i32>().expect("expected valid i32"))),
+                'd' => { self.pos += 'd'.len_utf8(); Some(Value::DoubleWord(numstr.parse::<u32>().expect("expected valid u32"))) },
+                'D' => { self.pos += 'D'.len_utf8(); Some(Value::SignedDoubleWord(numstr.parse::<i32>().expect("expected valid i32"))) },
 
-                'q' => Some(Value::QuadrupleWord(numstr.parse::<u64>().expect("expected valid u64"))),
-                'Q' => Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().expect("expected valid i64"))),
+                'q' => { self.pos += 'q'.len_utf8(); Some(Value::QuadrupleWord(numstr.parse::<u64>().expect("expected valid u64"))) },
+                'Q' => { self.pos += 'Q'.len_utf8(); Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().expect("expected valid i64"))) },
 
+                // any other character is not a postfix: don't consume it.
                 _ => self.number_literal_whole_bad(&numstr),
             }
         } else {
@@ -195,24 +196,24 @@ impl Parser {
         let numstr: String = self.consume_while(|c| c.is_ascii_digit() || c == '.');
         if numstr.is_empty() { return None; }
 
-        if let Some(postfix) = self.next_char() {
+        if let Some(postfix) = self.peek() {
             return match postfix {
                 // duplicated because no f16 type!
-                'h' => Some(Value::Half(numstr.parse().expect("expected valid f32"))),
-                's' => Some(Value::Single(numstr.parse().expect("expected valid f32"))),
+                'h' => { self.pos += 'h'.len_utf8(); Some(Value::Half(numstr.parse().expect("expected valid f32"))) },
+                's' => { self.pos += 's'.len_utf8(); Some(Value::Single(numstr.parse().expect("expected valid f32"))) },
 
                 // 64-bit floats
-                'f' => Some(Value::Float(numstr.parse().expect("expected valid f64"))),
-                _ => None
+                'f' => { self.pos += 'f'.len_utf8(); Some(Value::Float(numstr.parse().expect("expected valid f64"))) },
+                // not a postfix: don't consume it, fall through to default 64-bit float
+                _ => {
+                    if let Ok(attempt) = numstr.parse::<f64>() { Some(Value::Float(attempt)) } else { None }
+                }
             }
         } else {
             // if we don't see a postfix, assume we want a 64-bit float
             if let Ok(attempt) = numstr.parse::<f64>() {
                 return Some(Value::Float(attempt));
             } else {
-                // this is technically reachable if you wrote a MASSIVE NUMBER
-                // but that number will probably take more digits to write than
-                // atoms in the universe, so as far as I'm concerned, this is
                 unreachable!(
                     "you wrote a float that doesn't parse as a float ({}). {}",
                     numstr,
@@ -261,7 +262,13 @@ impl Parser {
                     self.pos += 1;
                     break;
                 },
+                Some(',') => {
+                    // consume separator and continue parsing next subspec
+                    self.pos += 1;
+                    continue;
+                },
                 Some(_) => {
+                    // parse a subspec entry (e.g., identifier or destruct)
                     let value = self.subspec()?;
                     spec.push(value);
                 }
@@ -552,9 +559,40 @@ impl Parser {
         }
 
         // ==== FUNCTION CALLS ====
-        // after parsing LHS, there may be a juxtaposition.
-        // Meaning this is a function call!
-        // only primaries are valid juxtapositions for... reasons...
+        // Check for function calls with parentheses
+        self.skip_ws();
+        if self.peek_or_consume('(') {
+            let mut fnargs: Vec<Expr> = Vec::new();
+            loop {
+                self.skip_ws();
+                match self.peek() {
+                    Some(')') => {
+                        self.pos += 1;
+                        break;
+                    },
+                    Some(',') => {
+                        self.pos += 1;
+                        continue;
+                    },
+                    Some(_) => {
+                        if let Some(arg) = self.expr() {
+                            fnargs.push(arg);
+                        } else {
+                            break;
+                        }
+                    },
+                    _ => break
+                }
+            }
+            return Some(
+                Expr::FunctionCall {
+                    left: Box::new(lhs),
+                    args: fnargs
+                }
+            );
+        }
+
+        // Check for juxtaposition function calls (space-separated arguments)
         let mut is_fncall = false;
         let mut fnargs: Vec<Expr> = Vec::new();
         while let Some(next) = self.literal() {
@@ -577,6 +615,8 @@ impl Parser {
     }
 
     pub fn stmt(&mut self) -> Option<Statement> {
+        self.skip_ws();
+        
         // ==== ASSIGNMENT ====
         if let Some(v) = self.attempt(Self::assignment) {
             return Some(v);

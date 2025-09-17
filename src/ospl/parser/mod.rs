@@ -25,7 +25,7 @@ impl Parser {
 
     pub fn feed(&mut self, s: &str) {
         self.input = s.to_string(); // replace buffer
-        self.pos = 0;
+        self.pos = 0usize;
     }
 }
 
@@ -42,7 +42,7 @@ impl Parser {
 
     fn peek_or_consume(&mut self, target: char) -> bool {
         let c = self.peek()
-            .unwrap_or_else(|| self.parse_error("unexpected EOF"));
+            .unwrap_or_else(|| self.parse_error("unexpected EOF in peek_or_consume"));
 
         if c == target {
             self.pos += c.len_utf8();
@@ -71,29 +71,31 @@ impl Parser {
     where
         F: FnOnce(&mut Self) -> Option<R>,
     {
-        let snapshot = self.pos;         // save cursor
-        if let Some(result) = f(self) { // try parser branch
-            Some(result)                // success, keep cursor advanced
+        let snapshot = self.pos;        // save cursor
+        if let Some(result) = f(self) {     // try parser branch
+            Some(result)                       // success, keep cursor advanced
         } else {
-            self.pos = snapshot;        // fail, rewind
+            self.pos = snapshot;               // fail, rewind
             None
         }
     }
 
     fn parse_error(&mut self, msg: &str) -> ! {
-        panic!("syntax or parse error at char {} (`{}` near `{}`...): {}",
+        let context_max = std::cmp::min(self.pos + 26, self.input.len());
+        panic!(
+            "
+syntax or parse error at char {} ({}): {}
+
+{}",
             self.pos,
-            &self.input[self.pos..self.pos+1],
-            &self.input[self.pos..self.pos+24].trim(),
-            msg
+            &self.input.get(self.pos..self.pos+1).unwrap_or("<unknown>"),
+            msg,
+            &self.input[self.pos..context_max].trim(),
         )
     }
 
     fn expect_char(&mut self, target: char) -> Option<char> {
-        let next = self.next_char()
-                            .unwrap_or_else(|| self.parse_error(&format!(
-                                            "unexpected EOF, expected `{}`",
-                                            target)));
+        let next = self.next_char()?;
 
         if next == target {
             return Some(next)
@@ -140,8 +142,9 @@ impl Parser {
         }
     }
 
-    pub fn skip_ws(&mut self) {
-        self.consume_while(|c| c.is_whitespace());
+    fn skip_ws(&mut self) {
+        self.consume_while(|c|
+            c.is_whitespace());
     }
 }
 
@@ -151,7 +154,6 @@ pub mod statement;
 
 impl Parser {
     fn block(&mut self) -> Option<Block> {
-        self.expect_char('{')?;
         self.skip_ws();
 
         let stmts = self.stmts()?;
@@ -160,6 +162,7 @@ impl Parser {
     }
 
     fn stmts(&mut self) -> Option<Vec<Statement>> {
+        self.expect_char('{')?;
         let mut stmts: Vec<Statement> = Vec::new();
         loop {
             self.skip_ws();
@@ -179,11 +182,12 @@ impl Parser {
                     // now handle the separator
                     self.skip_ws();
                 },
-                _ => self.parse_error("unexpected EOF")
+                _ => self.parse_error("unexpected EOF in stmts")
             }
         }
+
         self.skip_ws();
-        Some(stmts)
+        return Some(stmts);
     }
     
     fn identifier(&mut self) -> Option<String> {
@@ -201,6 +205,21 @@ impl Parser {
         id.push_str(&self.consume_while(|c| c.is_alphanumeric() || c == '_'));
 
         return Some(id);
+    }
+
+    fn parse_loop(&mut self) -> Option<Expr> {
+        if !self.match_next("loop") {
+            return None
+        }
+
+        self.skip_ws();
+        let ret: Block = self.block()
+            .unwrap_or_else(|| self.parse_error("a loop requires a body"));
+        return Some(
+            Expr::Loop(
+                Box::new(ret)
+            )
+        )
     }
 
     pub fn primary_expr(&mut self) -> Option<Expr> {
@@ -290,23 +309,9 @@ impl Parser {
             );
         }
 
-        // Check for juxtaposition function calls (space-separated arguments)
-        let mut is_fncall = false;
-        let mut fnargs: Vec<Expr> = Vec::new();
-        while let Some(next) = self.literal() {
-            fnargs.push(next);
-            self.skip_ws();
-
-            is_fncall = true;
-        }
-
-        if is_fncall {
-            return Some(
-                Expr::FunctionCall {
-                    left: Box::new(lhs),
-                    args: fnargs
-                }
-            );
+        // ==== LOOPS ====
+        if let Some(s) = self.attempt(Self::parse_loop) {
+            return Some(s)
         }
 
         return Some(lhs);
@@ -333,6 +338,23 @@ impl Parser {
         // ==== RETURN ====
         else if let Some(s) = self.attempt(Self::return_statement) {
             return Some(s)
+        }
+
+        // ==== BREAK ====
+        else if let Some(s) = self.attempt(Self::break_statement) {
+            return Some(s)
+        }
+
+        // ==== CONTINUE ====
+        else if let Some(s) = self.attempt(Self::continue_statement) {
+            return Some(s)
+        }
+
+        // a last ditch effort, try a bare expression
+        else if let Some(s) = self.attempt(Self::expr) {
+            return Some(
+                Statement::Expression(s)
+            )
         }
 
         // we don't know
@@ -366,22 +388,4 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     let _ = Interpreter::block(ctx.clone(), ast);
     /* println!("{:#?}", result);
     println!("{:#?}", ctx); */
-}
-
-pub fn main() {
-    // initialize
-    let ctx: Rc<RefCell<Context>> = Rc::new(RefCell::new(Context::new(None)));
-
-    // parse
-    let mut p: Parser = Parser::new();
-    /* stmt(ctx.clone(), &mut p, "def x = 9d");
-    stmt(ctx.clone(), &mut p, "def y = 10d");
-    stmt(ctx.clone(), &mut p, "def z = x + y"); */
-
-    block(ctx.clone(), &mut p, "
-    {
-        def x = 9;
-        def y=10;
-        def z=x+y;
-    }");
 }

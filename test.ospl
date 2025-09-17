@@ -1,8 +1,12 @@
 {
-    def add = fn(a, b) {
-        def z = a + b;
+    def add = fn((a, b), c) {
+        def z = a + b + c;
         return z;
     };
-    def result = add(1, 2);
+    print "hello";
+
+    def result = add((1, 2), 3);
+    print result;
+    result = add((4, 5), 6);
     print result;
 }

@@ -317,8 +317,10 @@ impl Mul for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let thing_to_write = match self {
+            // bools
             Self::Bool(b) => if *b { "true" } else { "false" },
 
+            // numbers
             Self::Byte(n) => &n.to_string(),
             Self::SignedByte(n) => &n.to_string(),
             Self::Word(n) => &n.to_string(),
@@ -334,7 +336,10 @@ impl Display for Value {
             Self::Null => "null",
             Self::Void => "void",
 
-            other @ _ => &other.to_string()  // attempt at conversion
+            // DO NOT USE TO_STRING OR YOU WILL BLOW YOUR STACK
+            Self::String(s) => s,
+
+            _ => "<unprintable>",
         };
         write!(f, "{}", thing_to_write)
     }
@@ -399,6 +404,14 @@ pub enum Expr {
 
     // stupid motherfuckers that don't want to follow the rules
     TupleLiteral(Vec<Rc<RefCell<Expr>>>),
+    ClassLiteral {
+        parents: Vec<Rc<RefCell<Expr>>>,
+        symbols: HashMap<String, Rc<RefCell<Expr>>>
+    },
+    MixmapLiteral {
+        positional: Vec<Rc<RefCell<Expr>>>,
+        keyed: HashMap<String, Rc<RefCell<Expr>>>
+    }
 }
 
 impl Expr {

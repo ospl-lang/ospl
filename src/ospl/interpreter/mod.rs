@@ -185,7 +185,60 @@ impl Interpreter {
                     let val = Self::expr(ctx.clone(), expr.borrow().clone());
                     values.push(val);
                 }
-                return Rc::new(RefCell::new(Value::Tuple(values)));
+                return Rc::new(
+                    RefCell::new(
+                        Value::Tuple(values)
+                    )
+                );
+            },
+
+            Expr::ClassLiteral { parents, symbols } => {
+                // compute symbols
+                let mut new_symbols: HashMap<String, Rc<RefCell<Value>>> = HashMap::new();
+                for (id, symbol) in symbols {
+                    let val = Self::expr(ctx.clone(), symbol.borrow().clone());
+                    new_symbols.insert(id, val);
+                }
+
+                // compute parents
+                let mut new_parents: Vec<Rc<RefCell<Value>>> = Vec::new();
+                for parent in &*parents {
+                    let val = Self::expr(ctx.clone(), parent.borrow().clone());
+                    new_parents.push(val);
+                }
+
+                return Rc::new(
+                    RefCell::new(
+                        Value::Class {
+                            parents: new_parents,
+                            symbols: new_symbols
+                        }
+                    )
+                )
+            },
+
+            Expr::MixmapLiteral { positional, keyed } => {
+                let mut new_keyed: HashMap<String, Rc<RefCell<Value>>> = HashMap::new();
+                for (k, ex) in keyed {
+                    let val = Self::expr(ctx.clone(), ex.borrow().clone());
+                    new_keyed.insert(k, val);
+                }
+
+                let mut new_ordered: Vec<Rc<RefCell<Value>>> = Vec::new();
+                for ex in positional {
+                    let val = Self::expr(ctx.clone(), ex.borrow().clone());
+                    new_ordered.push(val);
+                }
+
+                // compute new positional
+                return Rc::new(
+                    RefCell::new(
+                        Value::Mixmap {
+                            ordered: new_ordered,
+                            keyed: new_keyed
+                        }
+                    )
+                )
             }
         }
     }
@@ -270,7 +323,7 @@ impl Interpreter {
             // nice to have for testing
             Statement::Print { thing } => {
                 let to_print = Self::expr(ctx, *thing);
-                println!("{}", to_print.borrow());
+                print!("{}", to_print.borrow());
                 return StatementControl::Default
             }
         };

@@ -1,8 +1,6 @@
 use super::Parser;
 use crate::{
-    Statement,
-    Expr,
-    Value
+    Expr, Statement, Value
 };
 
 impl Parser {
@@ -29,8 +27,12 @@ impl Parser {
 
         return Some(Statement::Assign {
             left: Box::new(
-                Expr::Literal(
-                    Value::String(id)
+                Expr::Variable(
+                    Box::new(
+                        Expr::Literal(
+                            Value::String(id)
+                        )
+                    )
                 )
             ),
             right: Box::new(rhs)
@@ -85,5 +87,24 @@ impl Parser {
         self.skip_ws();
         let ret: Expr = self.expr()?;
         return Some(Statement::Return(ret));
+    }
+
+    pub fn break_statement(&mut self) -> Option<Statement> {
+        if !self.match_next("break ") {
+            return None
+        }
+
+        self.skip_ws();
+        let ret: Expr = self.expr()?;
+        return Some(Statement::Break(ret));
+    }
+
+    pub fn continue_statement(&mut self) -> Option<Statement> {
+        if !self.match_next("continue ") {
+            return None
+        }
+
+        self.skip_ws();
+        return Some(Statement::Continue);
     }
 }

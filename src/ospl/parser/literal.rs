@@ -6,8 +6,7 @@ use crate::{
     Expr
 };
 use std::{
-    rc::Rc,
-    cell::RefCell
+    cell::RefCell, rc::Rc
 };
 
 impl Parser {
@@ -107,6 +106,20 @@ impl Parser {
         )
     }
 
+    pub fn raw_string_literal(&mut self) -> Option<Value> {
+        // opening qoute
+        self.expect_char('"')?;
+
+        let s: String = self.consume_while(|c| c != '"');
+
+        self.expect_char('"')?;
+        return Some(
+            Value::String(
+                s
+            )
+        )
+    }
+
     pub fn tuple_literal(&mut self) -> Option<Expr> {
         self.expect_char('(')?;
 
@@ -133,7 +146,7 @@ impl Parser {
                     // now handle the separator
                     self.skip_ws();
                 },
-                _ => self.parse_error("unexpected EOF")
+                _ => self.parse_error("unexpected EOF in tuple literal")
             }
         }
         self.skip_ws();
@@ -175,6 +188,10 @@ impl Parser {
 
         else if let Some(func) = self.attempt(Self::function_literal) {
             return Some(Expr::Literal(func))
+        }
+
+        else if let Some(rawstr) = self.attempt(Self::raw_string_literal) {
+            return Some(Expr::Literal(rawstr));
         }
 
         else if let Some(tuple) = self.attempt(Self::tuple_literal) {

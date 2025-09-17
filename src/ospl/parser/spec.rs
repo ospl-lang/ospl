@@ -20,7 +20,7 @@ impl Parser {
         }
 
         // RECURSIVE CASES
-        else if self.peek_or_consume('(') {
+        else if self.peek() == Some('(') {
             // it's a destruction
             return Some(
                 Subspec::Destruct(
@@ -54,7 +54,7 @@ impl Parser {
                     let value = self.subspec()?;
                     spec.push(value);
                 }
-                _ => self.parse_error("unexpected EOF")
+                _ => self.parse_error("unexpected EOF in spec definition")
             }
         }
 

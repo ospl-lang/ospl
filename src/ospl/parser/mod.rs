@@ -113,6 +113,7 @@ syntax or parse error at char {} ({}): {}
         }
     }
 
+    #[allow(dead_code)]  // turn dead code off here, as I know it'll be used later
     fn find(&mut self, things: Vec<&str>) -> Option<String> {
         for thing in things {
             if self.input[self.pos..].starts_with(thing) {
@@ -151,7 +152,7 @@ syntax or parse error at char {} ({}): {}
 pub mod spec;
 pub mod literal;
 pub mod statement;
-pub mod exprs;
+pub mod controlflow;
 
 impl Parser {
     fn block(&mut self) -> Option<Block> {
@@ -208,7 +209,7 @@ impl Parser {
         return Some(id);
     }
 
-    fn parse_loop(&mut self) -> Option<Expr> {
+    fn parse_loop(&mut self) -> Option<Statement> {
         if !self.match_next("loop") {
             return None
         }
@@ -217,7 +218,7 @@ impl Parser {
         let ret: Block = self.block()
             .unwrap_or_else(|| self.parse_error("a loop requires a body"));
         return Some(
-            Expr::Loop(
+            Statement::Loop(
                 Box::new(ret)
             )
         )
@@ -274,12 +275,6 @@ impl Parser {
 
         if is_binaryop {
             return Some(lhs);
-        }
-
-        // prioritize these because they use reserved keywords
-        // ==== LOOPS ====
-        if let Some(s) = self.attempt(Self::parse_loop) {
-            return Some(s)
         }
 
         // ==== FUNCTION CALLS ====
@@ -343,7 +338,7 @@ impl Parser {
         }
 
         // ==== BREAK ====
-        else if let Some(s) = self.attempt(Self::break_statement) {
+        else if let Some(s) = self.attempt(Self::break_statement) {  // break without a value
             return Some(s)
         }
 
@@ -358,7 +353,17 @@ impl Parser {
         }
 
         // ==== CHECK ====
-        if let Some(s) = self.attempt(Self::parse_check) {
+        else if let Some(s) = self.attempt(Self::parse_check) {
+            return Some(s)
+        }
+
+        // ==== SELECT ====
+        else if let Some(s) = self.attempt(Self::parse_select) {
+            return Some(s)
+        }
+
+        // ==== LOOPS ====
+        else if let Some(s) = self.attempt(Self::parse_loop) {
             return Some(s)
         }
 

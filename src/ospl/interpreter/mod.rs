@@ -2,7 +2,7 @@
 pub enum StatementControl {
     Default,
     EarlyReturn(Value),
-    Break(Value),
+    Break,
     Continue,
 }
 
@@ -17,7 +17,7 @@ pub use context::*;
 pub struct Interpreter;
 
 pub mod function;
-pub mod loops;
+pub mod controlflow;
 pub mod object;
 
 impl Interpreter {
@@ -148,13 +148,6 @@ impl Interpreter {
                     "<=" => Value::Bool(lvalue <= rvalue),
                     _ => panic!(">//< I don't know how to preform '{}'!", op)
                 }))
-            },
-
-            // it it's a loop, we can handle that
-            Expr::Loop(body) => match Self::do_loop(ctx, *body) {
-                StatementControl::Break(v) => Rc::new(RefCell::new(v)),
-                StatementControl::EarlyReturn(v) => Rc::new(RefCell::new(v)),
-                _ => unreachable!(">//< I WAS THREE SHEDLETSKIES AWAY HOW DID BRO HIT ME??!")
             },
 
             Expr::Ref(inner_expr) => {
@@ -292,12 +285,8 @@ impl Interpreter {
                         .clone()
                 )
             },
-            Statement::Break(x) => {
-                return StatementControl::Break(
-                    Self::expr(ctx, x)
-                        .borrow()
-                        .clone()
-                )
+            Statement::Break => {
+                return StatementControl::Break
             },
 
             Statement::Continue => {
@@ -332,44 +321,18 @@ impl Interpreter {
             }
 
             // not even I know why this works, if it does at all!
-            Statement::Check { matching, cases } => {
-                let thing = Self::expr(ctx.clone(), *matching);
-                'outer: for (spec, ex) in cases {
-                    // create a new context for this case
-                    // this could very well be optimized... but that's what
-                    // `select` is for!
-                    let newctx = Rc::new(
-                        RefCell::new(
-                            Context::new(
-                                Some(
-                                    ctx.clone()
-                                )
-                            )
-                        )
-                    );
+            Statement::Check { matching, cases } =>
+                return Self::preform_check(ctx.clone(), matching, cases),
 
-                    // try to destruct into this new context
-                    if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().clone().into_values()) {
-                        // if it's successful then run this block
-                        for stmt in ex.0 {
-                            let ctrl = Self::stmt(newctx.clone(), stmt);
-                            match ctrl {
-                                StatementControl::Break(_) => break 'outer,
-                                StatementControl::EarlyReturn(_) => return ctrl,
-                                StatementControl::Continue => continue 'outer,
-                                _ => {},
-                            }
-                        }
-                    } else {
-                        continue;
-                    }
-                }
+            Statement::Select { matching, cases } => 
+                return Self::preform_select(ctx.clone(), matching, cases),
 
-                return StatementControl::Default
+            Statement::Loop(body) => match Self::do_loop(ctx, *body) {
+                StatementControl::Break => return StatementControl::Default,
+                StatementControl::EarlyReturn(v) => return StatementControl::EarlyReturn(v),  // may or may not fucking work
+                _ => unreachable!(">//< I WAS THREE SHEDLETSKIES AWAY HOW DID BRO HIT ME??!")
             },
-
-            Statement::Select { .. } => unimplemented!("select is not implemented yet")
-        };
+        }
     }
 
     /// Executes a `Block`
@@ -388,7 +351,7 @@ impl Interpreter {
             let control: StatementControl = Self::stmt(ctx.clone(), stmt);
             match control {
                 StatementControl::EarlyReturn(x) => return Some(Rc::new(RefCell::new(x))),
-                StatementControl::Break(_) => panic!("tried to break outside a loop!"),
+                StatementControl::Break => panic!("tried to break outside a loop!"),
                 StatementControl::Continue => panic!("tried to continue outside a loop!"),
                 StatementControl::Default => continue
             }
@@ -397,4 +360,3 @@ impl Interpreter {
         return None
     }
 }
-

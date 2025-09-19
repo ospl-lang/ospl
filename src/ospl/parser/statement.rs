@@ -90,14 +90,13 @@ impl Parser {
     }
 
     pub fn break_statement(&mut self) -> Option<Statement> {
-        if !self.match_next("break ") {
+        if !self.match_next("break") {
             return None
         }
 
-        self.skip_ws();
-        let ret: Expr = self.expr()
-            .unwrap_or(Expr::Literal(Value::Null));
-        return Some(Statement::Break(ret));
+        return Some(
+            Statement::Break
+        );
     }
 
     pub fn continue_statement(&mut self) -> Option<Statement> {

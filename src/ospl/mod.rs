@@ -364,13 +364,14 @@ pub enum Statement {
 
     // control flow
     Return(Expr),
-    Break(Expr),
+    Break,
     Continue,
 
     Print {
         thing: Box<Expr>
     },
 
+    // ==== CONTROL FLOW ====
     // if-else
     If {
         condition: Expr,
@@ -388,6 +389,7 @@ pub enum Statement {
         matching: Box<Expr>,
         cases: Vec<(Vec<Subspec>, Block)>,
     },
+    Loop(Box<Block>)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -408,7 +410,6 @@ pub enum Expr {
         right: Box<Expr>,
         op: String
     },
-    Loop(Box<Block>),
     Deref(Box<Expr>),
     Ref(Box<Expr>),
     Construct(Box<Expr>),

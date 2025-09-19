@@ -106,14 +106,18 @@ impl Parser {
         )
     }
 
+    const RAW_STR_OPEN: char = '\'';
+    const RAW_STR_CLOSE: char = '\'';
     pub fn raw_string_literal(&mut self) -> Option<Value> {
         // opening qoute (double qoute)
-        self.expect_char('"')?;
+        self.expect_char(Self::RAW_STR_OPEN)?;
 
-        let s: String = self.consume_while(|c| c != '"');
+        let s: String = self.consume_while(|c| c != Self::RAW_STR_CLOSE);
 
         // closing qoute (single qoute)
-        self.expect_char('"')?;
+        self.expect_char(Self::RAW_STR_CLOSE)
+            .unwrap_or_else(|| self.parse_error("something EXTREMELY NOT NORMAL HAPPENED"));
+
         return Some(
             Value::String(
                 s
@@ -132,15 +136,18 @@ impl Parser {
         }
     }
     
+    const ESC_STR_OPEN: char = '\"';
+    const ESC_STR_CLOSE: char = '\"';
+    const ESC_STR_ESCAPE_CHAR: char = '\\';
     pub fn escaped_string_literal(&mut self) -> Option<Value> {
         // opening qoute (single qoute)
-        self.expect_char('\'')?;
+        self.expect_char(Self::ESC_STR_OPEN)?;
 
         let mut s: String = String::new();
         loop {
             match self.next_char() {
-                Some('\'') => break,
-                Some('\\') => s.push(self.escape_character()),
+                Some(Self::ESC_STR_CLOSE) => break,
+                Some(Self::ESC_STR_ESCAPE_CHAR) => s.push(self.escape_character()),
                 Some(ch) => s.push(ch),
                 _ => self.parse_error("unexpected EOF in escapred string literal")
             };
@@ -153,18 +160,21 @@ impl Parser {
         )
     }
 
+    const TUPLE_LIT_OPEN: char = '(';
+    const TUPLE_LIT_CLOSE: char = ')';
+    const TUPLE_LIT_SEP: char = ',';
     pub fn tuple_literal(&mut self) -> Option<Expr> {
-        self.expect_char('(')?;
+        self.expect_char(Self::TUPLE_LIT_OPEN)?;
 
         let mut elements: Vec<Rc<RefCell<Expr>>> = Vec::new();
         loop {
             self.skip_ws();
             match self.peek() {
-                Some(')') => {
+                Some(Self::TUPLE_LIT_CLOSE) => {
                     self.pos += 1;
                     break;
                 },
-                Some(',') => {
+                Some(Self::TUPLE_LIT_SEP) => {
                     self.pos += 1;
                     continue;
                 }
@@ -188,10 +198,11 @@ impl Parser {
         );
     }
 
+    const KV_PAIR_SEP: char = ':';
     pub fn parse_kv_pair(&mut self) -> Option<(String, Rc<RefCell<Expr>>)> {
         let id = self.identifier()?;
         self.skip_ws();
-        self.expect_char(':')?;
+        self.expect_char(Self::KV_PAIR_SEP)?;
         self.skip_ws();
         let value = self.expr()?;
 
@@ -205,18 +216,21 @@ impl Parser {
         ))
     }
 
+    const MIXMAP_LIT_OPEN: char = '[';
+    const MIXMAP_LIT_CLOSE: char = ']';
+    const MIXMAP_LIT_SEP: char = ',';
     pub fn mixmap_literal(&mut self) -> Option<Expr> {
-        self.expect_char('[')?;
+        self.expect_char(Self::MIXMAP_LIT_OPEN)?;
         let mut positionals: Vec<Rc<RefCell<Expr>>> = Vec::new();
         let mut keyed: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
         loop {
             self.skip_ws();
             match self.peek() {
-                Some(']') => {
+                Some(Self::MIXMAP_LIT_CLOSE) => {
                     self.pos += 1;
                     break;
                 },
-                Some(',') => {
+                Some(Self::MIXMAP_LIT_SEP) => {
                     self.pos += 1;
                     continue;
                 }
@@ -244,6 +258,12 @@ impl Parser {
         )
     }
 
+    const VOID_KW: &str = "void";
+    const NULL_KW: &str = "null";
+
+    // true
+    const TRUE_KW: &str = "true";
+    const FALSE_KW: &str = "false";
     pub fn literal(&mut self) -> Option<Expr> {
         if let Some(num) = self.attempt(Self::number_literal_whole) {
             return Some(
@@ -257,18 +277,31 @@ impl Parser {
             );
         }
 
-        else if let Some(v) = self.find_peek_or_consume(vec!["void", "null", "true", "false"]) {
+        else if let Some(v) = self.find_peek_or_consume(
+            vec![
+                Self::VOID_KW,  // void
+                Self::NULL_KW,  // null
+                Self::TRUE_KW,  // true
+                Self::FALSE_KW  // false
+            ]) {
             return match v.as_ref() {
-                "void" => Some(
+                // void
+                Self::VOID_KW => Some(
                     Expr::Literal(Value::Void)
                 ),
-                "null" => Some(
+
+                // null
+                Self::NULL_KW => Some(
                     Expr::Literal(Value::Null)
                 ),
-                "true" => Some(
+
+                // true
+                Self::TRUE_KW => Some(
                     Expr::Literal(Value::Bool(true))
                 ),
-                "false" => Some(
+
+                // false
+                Self::FALSE_KW => Some(
                     Expr::Literal(Value::Bool(false))
                 ),
                 _ => None

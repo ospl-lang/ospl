@@ -6,7 +6,7 @@ use crate::{
     Expr
 };
 use std::{
-    cell::RefCell, rc::Rc
+    cell::RefCell, collections::HashMap, rc::Rc
 };
 
 impl Parser {
@@ -107,12 +107,45 @@ impl Parser {
     }
 
     pub fn raw_string_literal(&mut self) -> Option<Value> {
-        // opening qoute
+        // opening qoute (double qoute)
         self.expect_char('"')?;
 
         let s: String = self.consume_while(|c| c != '"');
 
+        // closing qoute (single qoute)
         self.expect_char('"')?;
+        return Some(
+            Value::String(
+                s
+            )
+        )
+    }
+
+    pub fn escape_character(&mut self) -> char {
+        match self.next_char() {
+            Some('\\') => return '\\',  // backslash
+            Some('\'') => return '\'',  // single qoute
+            Some('\"') => return '\"',  // double qoute
+            Some('n') => return '\n',   // newline
+            Some('t') => return '\t',   // tab
+            _ => self.parse_error("unknown escape character")
+        }
+    }
+    
+    pub fn escaped_string_literal(&mut self) -> Option<Value> {
+        // opening qoute (single qoute)
+        self.expect_char('\'')?;
+
+        let mut s: String = String::new();
+        loop {
+            match self.next_char() {
+                Some('\'') => break,
+                Some('\\') => s.push(self.escape_character()),
+                Some(ch) => s.push(ch),
+                _ => self.parse_error("unexpected EOF in escapred string literal")
+            };
+        }
+
         return Some(
             Value::String(
                 s
@@ -155,6 +188,62 @@ impl Parser {
         );
     }
 
+    pub fn parse_kv_pair(&mut self) -> Option<(String, Rc<RefCell<Expr>>)> {
+        let id = self.identifier()?;
+        self.skip_ws();
+        self.expect_char(':')?;
+        self.skip_ws();
+        let value = self.expr()?;
+
+        return Some((
+            id,
+            Rc::new(
+                RefCell::new(
+                    value
+                )
+            )
+        ))
+    }
+
+    pub fn mixmap_literal(&mut self) -> Option<Expr> {
+        self.expect_char('[')?;
+        let mut positionals: Vec<Rc<RefCell<Expr>>> = Vec::new();
+        let mut keyed: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+        loop {
+            self.skip_ws();
+            match self.peek() {
+                Some(']') => {
+                    self.pos += 1;
+                    break;
+                },
+                Some(',') => {
+                    self.pos += 1;
+                    continue;
+                }
+                Some(_) => {
+                    if let Some((id, ex)) = self.attempt(Self::parse_kv_pair) {
+                        keyed.insert(id, ex);
+                    } else if let Some(item) = self.attempt(Self::expr) {
+                        positionals.push(
+                            Rc::new(
+                                RefCell::new(
+                                    item
+                                )
+                            )
+                        );
+                    } else {
+                        self.parse_error("invalid mixmap item")
+                    }
+                }
+                _ => self.parse_error("unexpected EOF in mixmap literal")
+            }
+        }
+
+        return Some(
+            Expr::MixmapLiteral { positional: positionals, keyed }
+        )
+    }
+
     pub fn literal(&mut self) -> Option<Expr> {
         if let Some(num) = self.attempt(Self::number_literal_whole) {
             return Some(
@@ -187,15 +276,23 @@ impl Parser {
         }
 
         else if let Some(func) = self.attempt(Self::function_literal) {
-            return Some(Expr::Literal(func))
-        }
-
-        else if let Some(rawstr) = self.attempt(Self::raw_string_literal) {
-            return Some(Expr::Literal(rawstr));
+            return Some(Expr::Literal(func));
         }
 
         else if let Some(tuple) = self.attempt(Self::tuple_literal) {
             return Some(tuple);
+        }
+
+        else if let Some(mixmap) = self.attempt(Self::mixmap_literal) {
+            return Some(mixmap);
+        }
+
+        else if let Some(escstr) = self.attempt(Self::escaped_string_literal) {
+            return Some(Expr::Literal(escstr));
+        }
+
+        else if let Some(rawstr) = self.attempt(Self::raw_string_literal) {
+            return Some(Expr::Literal(rawstr));
         }
 
         else { return None; }

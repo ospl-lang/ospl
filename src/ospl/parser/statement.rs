@@ -1,6 +1,6 @@
 use super::Parser;
 use crate::{
-    Expr, Statement, Value
+    Block, Expr, Statement, Value
 };
 
 impl Parser {
@@ -40,8 +40,8 @@ impl Parser {
     }
 
     pub fn declaration(&mut self) -> Option<Statement> {
-        // all declarations start with def, if it doesn't, this clearly isn't
-        // a declaration.
+        // all declarations start with def, if it doesn't,
+        // this clearly isn't a declaration.
         // use a space here because it's a keyword
         if !self.match_next("def ") {
             return None
@@ -95,7 +95,8 @@ impl Parser {
         }
 
         self.skip_ws();
-        let ret: Expr = self.expr()?;
+        let ret: Expr = self.expr()
+            .unwrap_or(Expr::Literal(Value::Null));
         return Some(Statement::Break(ret));
     }
 
@@ -106,5 +107,56 @@ impl Parser {
 
         self.skip_ws();
         return Some(Statement::Continue);
+    }
+
+    pub fn if_statement(&mut self) -> Option<Statement> {
+        if !self.match_next("if ") {
+            return None
+        }
+        
+        // followed by condition
+        self.skip_ws();
+        let condition: Expr = self.expr()
+            .unwrap_or_else(|| self.parse_error("if statement requires condition"));
+
+        // followed by on true block
+        self.skip_ws();
+        let on_true: Block = self.block()
+            .unwrap_or_else(|| self.parse_error("if statement requires block"));
+
+        // support else blocks
+        self.skip_ws();
+        let on_false: Option<Block> = self.else_statement();
+
+        return Some(Statement::If {
+            condition,
+            on_true,
+            on_false
+        })
+    }
+
+    pub fn else_statement(&mut self) -> Option<Block> {
+        if !self.match_next("else ") {
+            return None
+        }
+
+        // else statements can be written two different ways.
+        // either as a block, like `else {...}`
+        self.skip_ws();
+        if let Some(block_way) = self.attempt(Self::block) {
+            return Some(block_way)
+        }
+
+        // or with a single statement, like `else print "hi"`
+        else if let Some(stmt_way) = self.attempt(Self::stmt) {
+            return Some(
+                Block(
+                    vec![stmt_way]
+                )
+            )
+        }
+
+        // otherwise, this isn't a valid else clause
+        self.parse_error("invalid else clause");
     }
 }

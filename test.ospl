@@ -3,10 +3,28 @@
         def z = a + b + c;
         return z;
     };
-    print "hello";
+    print 'test\n'
 
     def result = add((1, 2), 3);
-    print result;
-    result = add((4, 5), 6);
-    print result;
+    if result == 6 {
+        print 'result is equal to 6\n';
+    } else if result < 6 {
+        print 'result is less than 6\n';
+    } else if result > 6 {
+        print 'result is greater than 6\n';
+    } else {
+        print 'unreachable\n';
+    };
+
+    check result {
+        case (6) {
+            print 'result is 6\n';
+            break void;
+        }
+
+        case (_) {
+            print 'result isn\'t 6\n';
+            break void;
+        }
+    };
 }

@@ -16,9 +16,11 @@ impl Interpreter {
         ctx: Rc<RefCell<Context>>,
         spec: Vec<Subspec>,
         args: Vec<Rc<RefCell<Value>>>
-    ) -> () {
+    ) -> Result<(), ()> {
         // should ALWAYS be true at runtime, otherwise someone fucked it up.
-        assert!(spec.len() == args.len());
+        if spec.len() != args.len() {
+            return Err(())
+        }
 
         for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
             match subspec {
@@ -42,12 +44,14 @@ impl Interpreter {
                     ctx.clone(),
                     tree,
                     arg.borrow().clone().into_values()
-                ),
+                )?,
                 Subspec::Ignore => {},
-                _ => panic!(">//< I don't know what to do here")
-            }
+                Subspec::Literal(v) => if *arg.borrow() != v {
+                    return Err(());
+                },
+            };
         }
-        return;
+        return Ok(());
     }
 
     /// Handles a function call
@@ -63,14 +67,18 @@ impl Interpreter {
     /// 
     /// The return value of the function, if there is one, as `Option<Value>`
     pub fn do_function_call(
-        ctx: Rc<RefCell<Context>>,
+        ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>
     ) -> Option<Rc<RefCell<Value>>> {
         // create child context
         let child_ctx = Rc::new(
             RefCell::new(
-                Context::new(Some(ctx.clone()))));
+                Context::new(
+                    ctx
+                )
+            )
+        );
 
         // match via reference
         let f_ref = f.borrow(); // keep Ref<Value> alive
@@ -81,7 +89,7 @@ impl Interpreter {
 
         // assign arguments
         // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args);
+        Self::destruct_into(child_ctx.clone(), spec.clone(), args).ok()?;
 
         // run the function body
         Self::block(child_ctx, body.clone())

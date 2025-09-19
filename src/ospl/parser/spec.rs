@@ -5,12 +5,14 @@ use crate::{
 
 impl Parser {
     pub fn subspec(&mut self) -> Option<Subspec> {
-        // BASE CASE(s)
+        // ==== BASE CASE(s) ====
+        // ==== VALUE BIND ====
         if let Some(id) = self.attempt(Self::identifier) {
             // we do a binding
             return Some(Subspec::Bind(id))
         }
 
+        // ==== REF BIND ====
         else if self.peek_or_consume('$') {
             // we bind by reference
             let Some(id) = self.attempt(Self::identifier)
@@ -19,7 +21,7 @@ impl Parser {
             return Some(Subspec::BindRef(id));
         }
 
-        // RECURSIVE CASES
+        // ==== RECURSIVE CASES ====
         else if self.peek() == Some('(') {
             // it's a destruction
             return Some(
@@ -27,6 +29,24 @@ impl Parser {
                     self.spec_def()
                         .unwrap_or_else(|| self.parse_error("expected spec definition, found something else!"))
                 )
+            )
+        }
+
+        // ==== MORE FUCKING BASE CASES ====
+        // ==== LITERAL EXPECTATION ====
+        else if let Some(lit) = self.attempt(Self::literal) {
+            return Some(
+                Subspec::Literal(
+                    lit.into_value()
+                        .unwrap_or_else(|| self.parse_error("literal failed"))
+                )
+            )
+        }
+
+        // ==== allow nothing ====
+        else if self.peek_or_consume('_') {
+            return Some(
+                Subspec::Ignore
             )
         }
 

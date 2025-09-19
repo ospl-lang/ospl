@@ -7,9 +7,9 @@ use std::{
 pub enum Subspec {
     Bind(String),
     BindRef(String),
-    Ignore,
     Destruct(Vec<Subspec>),
-    Rest(String),
+    Literal(Value),
+    Ignore,
 }
 
 pub mod interpreter;
@@ -377,6 +377,17 @@ pub enum Statement {
         on_true: Block,
         on_false: Option<Block>  // you don't need an else
     },
+
+
+    // switch
+    Check {
+        matching: Box<Expr>,
+        cases: Vec<(Vec<Subspec>, Block)>,
+    },
+    Select {
+        matching: Box<Expr>,
+        cases: Vec<(Vec<Subspec>, Block)>,
+    },
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -411,7 +422,7 @@ pub enum Expr {
     MixmapLiteral {
         positional: Vec<Rc<RefCell<Expr>>>,
         keyed: HashMap<String, Rc<RefCell<Expr>>>
-    }
+    },
 }
 
 impl Expr {
@@ -442,6 +453,14 @@ impl Expr {
                 )
             )
         )
+    }
+
+    pub fn into_value(&self) -> Option<Value> {
+        if let Expr::Literal(v) = self {
+            return Some(v.clone())
+        } else {
+            return None
+        }
     }
 }
 

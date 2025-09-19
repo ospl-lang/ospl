@@ -120,7 +120,7 @@ impl Interpreter {
                     .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
-                    return Self::do_function_call(ctx, function, new_args)
+                    return Self::do_function_call(Some(ctx), function, new_args)
                         .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
@@ -142,7 +142,11 @@ impl Interpreter {
                     "/" => lvalue / rvalue,
                     "==" => Value::Bool(lvalue == rvalue),  // these are stupid and don't do that
                     "!=" => Value::Bool(lvalue != rvalue),
-                    _ => unreachable!(">//< I don't know how to preform '{}'!", op)
+                    "<" => Value::Bool(lvalue < rvalue),
+                    ">" => Value::Bool(lvalue > rvalue),
+                    ">=" => Value::Bool(lvalue >= rvalue),
+                    "<=" => Value::Bool(lvalue <= rvalue),
+                    _ => panic!(">//< I don't know how to preform '{}'!", op)
                 }))
             },
 
@@ -239,7 +243,7 @@ impl Interpreter {
                         }
                     )
                 )
-            }
+            },
         }
     }
 
@@ -284,15 +288,15 @@ impl Interpreter {
             Statement::Return(x) => {
                 return StatementControl::EarlyReturn(
                     Self::expr(ctx, x)
-                    .borrow()
-                    .clone()
+                        .borrow()
+                        .clone()
                 )
             },
             Statement::Break(x) => {
                 return StatementControl::Break(
                     Self::expr(ctx, x)
-                    .borrow()
-                    .clone()
+                        .borrow()
+                        .clone()
                 )
             },
 
@@ -326,6 +330,45 @@ impl Interpreter {
                 print!("{}", to_print.borrow());
                 return StatementControl::Default
             }
+
+            // not even I know why this works, if it does at all!
+            Statement::Check { matching, cases } => {
+                let thing = Self::expr(ctx.clone(), *matching);
+                'outer: for (spec, ex) in cases {
+                    // create a new context for this case
+                    // this could very well be optimized... but that's what
+                    // `select` is for!
+                    let newctx = Rc::new(
+                        RefCell::new(
+                            Context::new(
+                                Some(
+                                    ctx.clone()
+                                )
+                            )
+                        )
+                    );
+
+                    // try to destruct into this new context
+                    if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().clone().into_values()) {
+                        // if it's successful then run this block
+                        for stmt in ex.0 {
+                            let ctrl = Self::stmt(newctx.clone(), stmt);
+                            match ctrl {
+                                StatementControl::Break(_) => break 'outer,
+                                StatementControl::EarlyReturn(_) => return ctrl,
+                                StatementControl::Continue => continue 'outer,
+                                _ => {},
+                            }
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+
+                return StatementControl::Default
+            },
+
+            Statement::Select { .. } => unimplemented!("select is not implemented yet")
         };
     }
 

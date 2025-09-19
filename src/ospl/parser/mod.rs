@@ -151,6 +151,7 @@ syntax or parse error at char {} ({}): {}
 pub mod spec;
 pub mod literal;
 pub mod statement;
+pub mod exprs;
 
 impl Parser {
     fn block(&mut self) -> Option<Block> {
@@ -275,6 +276,12 @@ impl Parser {
             return Some(lhs);
         }
 
+        // prioritize these because they use reserved keywords
+        // ==== LOOPS ====
+        if let Some(s) = self.attempt(Self::parse_loop) {
+            return Some(s)
+        }
+
         // ==== FUNCTION CALLS ====
         // Check for function calls with parentheses
         self.skip_ws();
@@ -307,11 +314,6 @@ impl Parser {
                     args: fnargs
                 }
             );
-        }
-
-        // ==== LOOPS ====
-        if let Some(s) = self.attempt(Self::parse_loop) {
-            return Some(s)
         }
 
         return Some(lhs);
@@ -347,6 +349,16 @@ impl Parser {
 
         // ==== CONTINUE ====
         else if let Some(s) = self.attempt(Self::continue_statement) {
+            return Some(s)
+        }
+
+        // ==== IF/ELSE ====
+        else if let Some(s) = self.attempt(Self::if_statement) {
+            return Some(s)
+        }
+
+        // ==== CHECK ====
+        if let Some(s) = self.attempt(Self::parse_check) {
             return Some(s)
         }
 

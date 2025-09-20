@@ -58,7 +58,6 @@ pub enum Value {
     },
     Object {
         symbols: HashMap<String, Rc<RefCell<Value>>>,
-        class: Rc<RefCell<Value>>,
     },
     Class {
         parents: Vec<Rc<RefCell<Value>>>,
@@ -155,11 +154,10 @@ impl Value {
                     .collect();
                 return Value::Tuple(new_vec)
             },
-            Value::Object { symbols, class} => {
+            Value::Object { symbols, .. } => {
                 let hm = symbols.clone();
                 return Value::Object {
                     symbols: hm,
-                    class: class.clone()
                 }
             },
 
@@ -420,6 +418,7 @@ pub enum Expr {
         parents: Vec<Rc<RefCell<Expr>>>,
         symbols: HashMap<String, Rc<RefCell<Expr>>>
     },
+    ObjectLiteral(HashMap<String, Rc<RefCell<Expr>>>),
     MixmapLiteral {
         positional: Vec<Rc<RefCell<Expr>>>,
         keyed: HashMap<String, Rc<RefCell<Expr>>>

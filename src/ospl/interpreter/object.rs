@@ -15,7 +15,6 @@ impl Interpreter {
             RefCell::new(
                 Value::Object {
                     symbols: HashMap::new(),
-                    class: cls.clone()
                 }
             )
         );

@@ -216,6 +216,46 @@ impl Parser {
         ))
     }
 
+    const OBJ_LIT_KW: &str = "obj";
+    const OBJ_LIT_OPEN: char = '{';
+    const OBJ_LIT_CLOSE: char = '}';
+    pub fn obj_literal(&mut self) -> Option<Expr> {
+        if !self.match_next(Self::OBJ_LIT_KW) {
+            return None
+        }
+
+        self.skip_ws();
+        self.expect_char(Self::OBJ_LIT_OPEN)
+            .unwrap_or_else(|| self.parse_error("expected opening char for class literal"));
+
+        let mut members: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+        loop {
+            self.skip_ws();
+            match self.peek() {
+                Some(Self::OBJ_LIT_CLOSE) => {
+                    self.pos += 1;
+                    break;
+                },
+                Some(_) => {
+                    let Some((id, ex)) = self.parse_kv_pair() else {
+                        self.parse_error("invalid key-value pair")
+                    };
+                    members.insert(
+                        id,
+                        ex
+                    );
+                }
+                _ => self.parse_error("unexpected EOF in class literal")
+            }
+        }
+
+        return Some(
+            Expr::ObjectLiteral(
+                members
+            )
+        )
+    }
+
     const MIXMAP_LIT_OPEN: char = '[';
     const MIXMAP_LIT_CLOSE: char = ']';
     const MIXMAP_LIT_SEP: char = ',';
@@ -326,6 +366,10 @@ impl Parser {
 
         else if let Some(rawstr) = self.attempt(Self::raw_string_literal) {
             return Some(Expr::Literal(rawstr));
+        }
+
+        else if let Some(obj) = self.attempt(Self::obj_literal) {
+            return Some(obj)
         }
 
         else { return None; }

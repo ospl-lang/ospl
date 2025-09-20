@@ -1,6 +1,6 @@
 [package]
 name = "ospl"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "the (UNFINISHED!!!) OSPL programming language"

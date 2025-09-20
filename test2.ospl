@@ -1,0 +1,8 @@
+{
+    def x = obj {
+        a: "hello"
+        b: "hello"
+    };
+
+    print x;
+}

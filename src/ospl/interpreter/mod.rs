@@ -237,6 +237,20 @@ impl Interpreter {
                     )
                 )
             },
+
+            Expr::ObjectLiteral(hm) => {
+                let mut new_hm: HashMap<String, Rc<RefCell<Value>>> = HashMap::new();
+                for (k, ex) in hm {
+                    let val = Self::expr(ctx.clone(), ex.borrow().clone());
+                    new_hm.insert(k, val);
+                }
+
+                return Rc::new(
+                    RefCell::new(
+                        Value::Object { symbols: new_hm }
+                    )
+                )
+            }
         }
     }
 

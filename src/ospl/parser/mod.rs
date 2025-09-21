@@ -248,18 +248,58 @@ impl Parser {
         return Some(lhs)
     }
 
-    /// THE THE FUNCTION
     pub fn expr(&mut self) -> Option<Expr> {
-        let mut lhs: Expr = self.primary_expr()?;
+        let mut lhs = self.primary_expr()?;
 
-        // ==== BINARY OPS ====
-        let mut is_binaryop = false;
+        // ==== POSTFIX OPS ====
+        loop {
+            self.skip_ws();
+
+            // property access
+            if self.peek_or_consume('.') {
+                self.skip_ws();
+                if let Some(ident) = self.identifier() {
+                    lhs = Expr::Property(
+                        Box::new(lhs),
+                        Box::new(Expr::Literal(Value::String(ident))),
+                    );
+                    continue;
+                } else {
+                    panic!("Expected identifier after '.'");
+                }
+            }
+
+            // function call
+            if self.peek_or_consume('(') {
+                let mut fnargs = Vec::new();
+                loop {
+                    self.skip_ws();
+                    match self.peek() {
+                        Some(')') => { self.pos += 1; break; }
+                        Some(',') => { self.pos += 1; continue; }
+                        Some(_) => {
+                            if let Some(arg) = self.expr() {
+                                fnargs.push(arg);
+                            } else { break; }
+                        }
+                        _ => break
+                    }
+                }
+                lhs = Expr::FunctionCall {
+                    left: Box::new(lhs),
+                    args: fnargs,
+                };
+                continue;
+            }
+
+            break; // no more postfix
+        }
+
+        // ==== INFIX OPS ====
         self.skip_ws();
-        while let Some(op) = self.find_peek_or_consume(vec![
+        if let Some(op) = self.find_peek_or_consume(vec![
             "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", "<", ">",
             "|", "||", "&", "&&"]) {
-            
-            // parse RHS
             self.skip_ws();
             if let Some(rhs) = self.expr() {
                 lhs = Expr::BinaryOp {
@@ -267,51 +307,10 @@ impl Parser {
                     right: Box::new(rhs),
                     op,
                 };
-                is_binaryop = true;
-            } else {
-                break;  // failed to parse RHS after operator
             }
         }
 
-        if is_binaryop {
-            return Some(lhs);
-        }
-
-        // ==== FUNCTION CALLS ====
-        // Check for function calls with parentheses
-        self.skip_ws();
-        if self.peek_or_consume('(') {
-            let mut fnargs: Vec<Expr> = Vec::new();
-            loop {
-                self.skip_ws();
-                match self.peek() {
-                    Some(')') => {
-                        self.pos += 1;
-                        break;
-                    },
-                    Some(',') => {
-                        self.pos += 1;
-                        continue;
-                    },
-                    Some(_) => {
-                        if let Some(arg) = self.expr() {
-                            fnargs.push(arg);
-                        } else {
-                            break;
-                        }
-                    },
-                    _ => break
-                }
-            }
-            return Some(
-                Expr::FunctionCall {
-                    left: Box::new(lhs),
-                    args: fnargs
-                }
-            );
-        }
-
-        return Some(lhs);
+        Some(lhs)
     }
 
     pub fn stmt(&mut self) -> Option<Statement> {

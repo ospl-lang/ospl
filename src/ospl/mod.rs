@@ -162,7 +162,8 @@ impl Value {
             },
 
             // silly types
-            Value::Ref(rc) => Value::Ref(Rc::new(RefCell::new(rc.borrow().deep_clone()))),
+            // this one practically just does nothing
+            Value::Ref(rc) => Value::Ref(rc.clone()),
             
             // stupid types
             Value::String(s) => Value::String(s.clone()),

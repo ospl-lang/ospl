@@ -255,6 +255,10 @@ impl Parser {
         loop {
             self.skip_ws();
 
+            // ==== ALL THE CODE THAT FOLLOWS WAS WRITTEN BY AN LLM ===
+            // ...thanks Kevin, and Colton...
+            // the comments were mostly written by humans though.
+
             // property access
             if self.peek_or_consume('.') {
                 self.skip_ws();
@@ -265,7 +269,21 @@ impl Parser {
                     );
                     continue;
                 } else {
-                    panic!("Expected identifier after '.'");
+                    self.parse_error("Expected identifier after '.'");
+                }
+            }
+
+            // property access (but dynamic this time)
+            if self.peek_or_consume(':') {
+                self.skip_ws();
+                if let Some(ident) = self.expr() {
+                    lhs = Expr::Property(
+                        Box::new(lhs),
+                        Box::new(ident),
+                    );
+                    continue;
+                } else {
+                    self.parse_error("Expected identifier after '.'");
                 }
             }
 

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "OSPL",
+  "scopeName": "source.ospl",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#spec" },
+    { "include": "#types" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": { "patterns": [] },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.ospl",
+          "begin": "'",
+          "end": "'",
+          "patterns": []
+        },
+        {
+          "name": "string.quoted.double.ospl",
+          "begin": '"',
+          "end": '"',
+          "patterns": [
+            {
+              "name": "constant.character.escape.ospl",
+              "match": "\\\\[\\'\"ntre]"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.ospl",
+          "match": "\\b[0-9]+\\.[0-9]+(?:[hsf])?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.ospl",
+          "match": "\\b[0-9]+(?:[bBwWdDqQ])?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ospl",
+          "match": "\\b(?:if|else|return|break|continue|select|check|case|loop|destruct|from)\\b"
+        },
+        {
+          "name": "keyword.declaration.ospl",
+          "match": "\\b(?:def)\\b"
+        },
+        {
+          "name": "support.function.print.ospl",
+          "match": "\\bprint\\b"
+        },
+        {
+          "name": "keyword.other.literals.ospl",
+          "match": "\\b(?:void|null|true|false|macro|fn|obj|cls|mix)\\b"
+        }
+      ]
+    },
+    "spec": {
+      "patterns": [
+        {
+          "name": "variable.parameter.reference.ospl",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "variable.language.thisref.ospl",
+          "match": "\\?[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "constant.language.ignore.ospl",
+          "match": "\\b_\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.numeric.ospl",
+          "match": "\\b(?:byte|BYTE|word|WORD|dword|DWORD|qword|QWORD|half|single|float|str|ref)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arithmetic.ospl",
+          "match": "\\+|\\-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.logical.ospl",
+          "match": "\\|\\||\\||&&|&|==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.assignment.ospl",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.property.ospl",
+          "match": "[.:]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.section.block.begin.ospl", "match": "\\{" },
+        { "name": "punctuation.section.block.end.ospl", "match": "\\}" },
+        { "name": "punctuation.section.group.begin.ospl", "match": "\\(\\*|\\(" },
+        { "name": "punctuation.section.group.end.ospl", "match": "\\*\\)|\\)" },
+        { "name": "punctuation.section.brackets.begin.ospl", "match": "\\[" },
+        { "name": "punctuation.section.brackets.end.ospl", "match": "\\]" },
+        { "name": "punctuation.separator.comma.ospl", "match": "," },
+        { "name": "punctuation.terminator.statement.ospl", "match": ";" },
+        { "name": "punctuation.separator.key-value.ospl", "match": ":" }
+      ]
+    }
+  }
+}
+

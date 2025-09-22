@@ -50,6 +50,16 @@ impl Parser {
             )
         }
 
+        // ==== take self ====
+        else if self.peek_or_consume('?') {
+            return Some(
+                Subspec::ThisRef(
+                    self.identifier()
+                        .unwrap_or_else(|| self.parse_error("expected identifier for ThisRef"))
+                )
+            )
+        }
+
         else { None }
     }
 

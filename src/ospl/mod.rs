@@ -2,6 +2,8 @@ use std::{
     cell::RefCell, cmp::Ordering, collections::HashMap, fmt::Display, ops::{Add, Div, Mul, Sub}, rc::Rc
 };
 
+use crate::Context;
+
 /// a function spec
 #[derive(Debug, Clone)]
 pub enum Subspec {
@@ -10,6 +12,7 @@ pub enum Subspec {
     Destruct(Vec<Subspec>),
     Literal(Value),
     Ignore,
+    ThisRef(String)
 }
 
 pub mod interpreter;
@@ -52,7 +55,12 @@ pub enum Value {
         ordered: Vec<Rc<RefCell<Value>>>,
         keyed: HashMap<String, Rc<RefCell<Value>>>
     },
-    Function {
+    MacroFn {
+        spec: Vec<Subspec>,
+        body: Block,
+    },
+    RealFn {
+        ctx: Rc<RefCell<Context>>,
         spec: Vec<Subspec>,
         body: Block,
     },
@@ -424,6 +432,10 @@ pub enum Expr {
         positional: Vec<Rc<RefCell<Expr>>>,
         keyed: HashMap<String, Rc<RefCell<Expr>>>
     },
+    RealFnLiteral {
+        spec: Vec<Subspec>,
+        body: Block,
+    }
 }
 
 impl Expr {

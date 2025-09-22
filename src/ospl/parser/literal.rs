@@ -88,8 +88,9 @@ impl Parser {
         }
     }
 
-    pub fn function_literal(&mut self) -> Option<Value> {
-        if !self.match_next("fn") {
+    const MACRO_LIT_KW: &str = "macro";
+    pub fn macro_literal(&mut self) -> Option<Value> {
+        if !self.match_next(Self::MACRO_LIT_KW) {
             return None
         }
 
@@ -99,8 +100,27 @@ impl Parser {
         let block: Block = self.block()?;
 
         return Some(
-            Value::Function {
+            Value::MacroFn {
                 spec: spec,
+                body: block
+            }
+        )
+    }
+
+    const FN_LIT_KW: &str = "fn";
+    pub fn fn_literal(&mut self) -> Option<Expr> {
+        if !self.match_next(Self::FN_LIT_KW) {
+            return None
+        }
+
+        self.skip_ws();
+        let spec: Vec<Subspec> = self.spec_def()?;
+        self.skip_ws();
+        let block: Block = self.block()?;
+
+        return Some(
+            Expr::RealFnLiteral {
+                spec,
                 body: block
             }
         )
@@ -108,6 +128,7 @@ impl Parser {
 
     const RAW_STR_OPEN: char = '\'';
     const RAW_STR_CLOSE: char = '\'';
+    /// parses next data as a raw string literal
     pub fn raw_string_literal(&mut self) -> Option<Value> {
         // opening qoute (double qoute)
         self.expect_char(Self::RAW_STR_OPEN)?;
@@ -125,6 +146,7 @@ impl Parser {
         )
     }
 
+    /// parses an escape character
     pub fn escape_character(&mut self) -> char {
         match self.next_char() {
             Some('\\') => return '\\',  // backslash
@@ -132,6 +154,8 @@ impl Parser {
             Some('\"') => return '\"',  // double qoute
             Some('n') => return '\n',   // newline
             Some('t') => return '\t',   // tab
+            Some('r') => return '\r',   // carrige return
+            Some('e') => return '\x1b', // escape (ANSI escape)
             _ => self.parse_error("unknown escape character")
         }
     }
@@ -139,6 +163,7 @@ impl Parser {
     const ESC_STR_OPEN: char = '\"';
     const ESC_STR_CLOSE: char = '\"';
     const ESC_STR_ESCAPE_CHAR: char = '\\';
+    /// parses next data as an escaped string literal
     pub fn escaped_string_literal(&mut self) -> Option<Value> {
         // opening qoute (single qoute)
         self.expect_char(Self::ESC_STR_OPEN)?;
@@ -298,6 +323,93 @@ impl Parser {
         )
     }
 
+    const CLASS_LITERAL_SYMBOLS_OPEN: char = '{';
+    const CLASS_LITERAL_SYMBOLS_CLOSE: char = '}';
+    fn construct_class_symbols(&mut self) -> Option<HashMap<String, Rc<RefCell<Expr>>>> {
+        self.expect_char(Self::CLASS_LITERAL_SYMBOLS_OPEN)?;
+
+        let mut parents: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+
+        loop {
+            self.skip_ws();
+            match self.next_char() {
+                Some(Self::CLASS_LITERAL_SYMBOLS_CLOSE) => break,
+                Some(_) => {
+                    let Some((id, ex)) = self.parse_kv_pair() else {
+                        self.parse_error("expected valid key-value pair")
+                    };
+
+                    parents.insert(id, ex);
+                }
+                _ => self.parse_error("unexpected EOF in key-value pair parsing")
+            }
+        }
+
+        return Some(parents);
+    }
+
+    const CLASS_LITERAL_PARENTS_OPEN: char = '(';
+    const CLASS_LITERAL_PARENTS_CLOSE: char = '(';
+    const CLASS_LITERAL_PARENTS_SEP: char = ',';
+    fn construct_class_parents(&mut self) -> Vec<Rc<RefCell<Expr>>> {
+        // ensure we actually HAVE to parse any parents
+        if !self.peek_or_consume(Self::CLASS_LITERAL_PARENTS_OPEN) {
+            return Vec::new()
+        }
+
+        let mut parents: Vec<Rc<RefCell<Expr>>> = Vec::new();
+        loop {
+            match self.peek() {
+                Some(Self::CLASS_LITERAL_PARENTS_CLOSE) => {
+                    self.pos += 1;
+                    break
+                },
+                Some(Self::CLASS_LITERAL_PARENTS_SEP) => {
+                    self.pos += 1;
+                    continue
+                },
+                Some(_) => {
+                    //self.pos += 1;
+                    parents.push(
+                        Rc::new(
+                            RefCell::new(
+                                self.expr()
+                                    .unwrap_or_else(|| self.parse_error("expected valid expression"))
+                            )
+                        )
+                    );
+                }
+                _ => self.parse_error("unexpected EOF parent class list")
+            }
+        }
+        
+        return parents
+    }
+
+    const CLASS_LITERAL_KW: &str = "cls";
+
+    /// parse a class literal that has NO PARENTS BECAUSE FUCK MY DAD
+    pub fn class_literal(&mut self) -> Option<Expr> {
+        if !self.match_next(Self::CLASS_LITERAL_KW) {
+            return None
+        }
+        self.skip_ws();
+
+        //let parents: Vec<Rc<RefCell<Expr>>> = self.construct_class_parents();
+        // disable parents
+        let parents: Vec<Rc<RefCell<Expr>>> = vec![];
+
+        let symbols: HashMap<String, Rc<RefCell<Expr>>> = self.construct_class_symbols()?;
+
+        // ==== SYMBOLS ====
+        return Some(
+            Expr::ClassLiteral {
+                parents,
+                symbols
+            }
+        )
+    }
+
     const VOID_KW: &str = "void";
     const NULL_KW: &str = "null";
 
@@ -348,8 +460,12 @@ impl Parser {
             };
         }
 
-        else if let Some(func) = self.attempt(Self::function_literal) {
-            return Some(Expr::Literal(func));
+        else if let Some(mcro) = self.attempt(Self::macro_literal) {
+            return Some(Expr::Literal(mcro));
+        }
+
+        else if let Some(realfn) = self.attempt(Self::fn_literal) {
+            return Some(realfn);
         }
 
         else if let Some(tuple) = self.attempt(Self::tuple_literal) {
@@ -370,6 +486,10 @@ impl Parser {
 
         else if let Some(obj) = self.attempt(Self::obj_literal) {
             return Some(obj)
+        }
+
+        else if let Some(class) = self.attempt(Self::class_literal) {
+            return Some(class)
         }
 
         else { return None; }

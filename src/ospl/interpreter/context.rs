@@ -15,6 +15,9 @@ pub struct Context {
 
     /// A hashmap of symbols in this context. Self-explainatory
     vars: HashMap<String, Rc<RefCell<Value>>>,
+
+    /// The current instance we're doing
+    pub current_instance: Option<Rc<RefCell<Value>>>
 }
 
 impl Context {
@@ -22,6 +25,7 @@ impl Context {
         Self {
             vars: HashMap::new(),
             parent: parent.as_ref().map(|p| Rc::downgrade(p)),
+            current_instance: None
         }
     }
 

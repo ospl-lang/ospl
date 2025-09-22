@@ -56,7 +56,10 @@ impl Parser {
         let mut initializer: Option<Expr> = None;
         if self.peek_or_consume('=') {
             self.skip_ws();
-            initializer = Some(self.expr().unwrap());
+            initializer = Some(
+                self.expr()
+                    .unwrap_or_else(|| self.parse_error("expected valid expression for declaration initializer"))
+            );
             self.skip_ws();
         }
 

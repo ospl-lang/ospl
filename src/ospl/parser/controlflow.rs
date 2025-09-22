@@ -77,4 +77,20 @@ impl Parser {
             }
         )
     }
+
+    pub fn parse_loop(&mut self) -> Option<Statement> {
+        if !self.match_next("loop") {
+            return None
+        }
+
+        self.skip_ws();
+        let ret: Block = self.block()
+            .unwrap_or_else(|| self.parse_error("a loop requires a body"));
+        return Some(
+            Statement::Loop(
+                Box::new(ret)
+            )
+        )
+    }
+
 }

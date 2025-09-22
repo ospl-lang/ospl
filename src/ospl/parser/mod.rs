@@ -155,6 +155,7 @@ pub mod statement;
 pub mod controlflow;
 
 impl Parser {
+    /// parses into a `Block` if it finds one
     fn block(&mut self) -> Option<Block> {
         self.skip_ws();
 
@@ -163,6 +164,8 @@ impl Parser {
         return Some(Block(stmts));
     }
 
+    /// parses a list of statements, seperated by semicolons
+    /// and enclosed in `{`
     fn stmts(&mut self) -> Option<Vec<Statement>> {
         self.expect_char('{')?;
         let mut stmts: Vec<Statement> = Vec::new();
@@ -192,6 +195,7 @@ impl Parser {
         return Some(stmts);
     }
     
+    /// parse a single identifier
     fn identifier(&mut self) -> Option<String> {
         let mut id: String = String::new();
 
@@ -206,22 +210,21 @@ impl Parser {
         // NOW it can have numbers
         id.push_str(&self.consume_while(|c| c.is_alphanumeric() || c == '_'));
 
-        return Some(id);
-    }
-
-    fn parse_loop(&mut self) -> Option<Statement> {
-        if !self.match_next("loop") {
+        // ensure it contains nothing reserved
+        if vec![
+            // reserved words
+            "loop", "obj", "mix", "cls", "return", "if", "else", "select",
+            "check", "case", "destruct", "from", "print",
+            
+            // types
+            "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
+            "half", "single", "float", "str", "ref"].contains(&id.as_str())
+        {
+            // this IS NOT A PARSE ERROR!
             return None
         }
 
-        self.skip_ws();
-        let ret: Block = self.block()
-            .unwrap_or_else(|| self.parse_error("a loop requires a body"));
-        return Some(
-            Statement::Loop(
-                Box::new(ret)
-            )
-        )
+        return Some(id);
     }
 
     pub fn primary_expr(&mut self) -> Option<Expr> {
@@ -248,6 +251,8 @@ impl Parser {
         return Some(lhs)
     }
 
+    const PROP_ACCESS_CHAR: char = '.';
+    const PROP_DYN_ACCESS_CHAR: char = ':';
     pub fn expr(&mut self) -> Option<Expr> {
         let mut lhs = self.primary_expr()?;
 
@@ -260,7 +265,7 @@ impl Parser {
             // the comments were mostly written by humans though.
 
             // property access
-            if self.peek_or_consume('.') {
+            if self.peek_or_consume(Self::PROP_ACCESS_CHAR) {
                 self.skip_ws();
                 if let Some(ident) = self.identifier() {
                     lhs = Expr::Property(
@@ -269,21 +274,21 @@ impl Parser {
                     );
                     continue;
                 } else {
-                    self.parse_error("Expected identifier after '.'");
+                    self.parse_error("Expected identifier after property access");
                 }
             }
 
             // property access (but dynamic this time)
-            if self.peek_or_consume(':') {
+            if self.peek_or_consume(Self::PROP_DYN_ACCESS_CHAR) {
                 self.skip_ws();
-                if let Some(ident) = self.expr() {
+                if let Some(ident) = self.expr() {  // surely that won't fucking memory leak, right?
                     lhs = Expr::Property(
                         Box::new(lhs),
                         Box::new(ident),
                     );
                     continue;
                 } else {
-                    self.parse_error("Expected identifier after '.'");
+                    self.parse_error("Expected expr after dynamic property access");
                 }
             }
 

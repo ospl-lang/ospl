@@ -1,5 +1,6 @@
 use super::*;
 
+use core::borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -49,9 +50,34 @@ impl Interpreter {
                 Subspec::Literal(v) => if *arg.borrow() != v {
                     return Err(());
                 },
+                Subspec::ThisRef(id) => {
+                    // this is ugly but we have to do it
+                    // to make the borrow checker happy
+                    let mut b = ctx.borrow_mut();
+
+                    let thing = b
+                        .current_instance
+                        .as_ref()
+                        .expect("agh")
+                        .clone();  // clone or use `take()` if you want to move it
+
+                    b.set(&id, Value::Ref(thing));  // operate with the same mutable borrow
+                }
             };
         }
         return Ok(());
+    }
+
+    pub fn do_call(
+        ctx: Option<Rc<RefCell<Context>>>,
+        f: Rc<RefCell<Value>>,
+        args: Vec<Rc<RefCell<Value>>>
+    ) -> Option<Rc<RefCell<Value>>> {
+        match *f.borrow() {
+            Value::RealFn {..} => return Self::do_fn_call(f.clone(), args),
+            Value::MacroFn {..} => return Self::do_macro_call(ctx, f.clone(), args),
+            _ => panic!("tried to call an uncallable value")
+        }
     }
 
     /// Handles a function call
@@ -66,7 +92,7 @@ impl Interpreter {
     /// # Returns
     /// 
     /// The return value of the function, if there is one, as `Option<Value>`
-    pub fn do_function_call(
+    pub fn do_macro_call(
         ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>
@@ -83,8 +109,8 @@ impl Interpreter {
         // match via reference
         let f_ref = f.borrow(); // keep Ref<Value> alive
         let (spec, body) = match &*f_ref {
-            Value::Function { spec, body } => (spec, body),
-            _ => panic!(">//< tried to call non-function: {:#?}!", f_ref),
+            Value::MacroFn { spec, body } => (spec, body),
+            _ => panic!(">//< tried to call non-macro: {:#?}!", f_ref),
         };
 
         // assign arguments
@@ -92,6 +118,34 @@ impl Interpreter {
         Self::destruct_into(child_ctx.clone(), spec.clone(), args).ok()?;
 
         // run the function body
-        Self::block(child_ctx, body.clone())
+        return Self::block(child_ctx, body.clone());
+    }
+
+    pub fn do_fn_call(
+        f: Rc<RefCell<Value>>,
+        args: Vec<Rc<RefCell<Value>>>
+    ) -> Option<Rc<RefCell<Value>>> {
+        let f_ref = f.borrow();
+        let Value::RealFn { spec, body , ctx} = &*f_ref
+        else {
+            panic!("tried to call non-function")
+        };
+
+        // create child context
+        let child_ctx = Rc::new(
+            RefCell::new(
+                Context::new(
+                    Some(
+                        ctx.clone()
+                    )
+                )
+            )
+        );
+
+        // cloning spec is not cheap, I don't like it but whatever
+        Self::destruct_into(child_ctx.clone(), spec.clone(), args).ok()?;
+
+        // run the function body
+        return Self::block(child_ctx, body.clone());
     }
 }

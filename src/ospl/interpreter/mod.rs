@@ -120,7 +120,7 @@ impl Interpreter {
                     .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
-                    return Self::do_function_call(Some(ctx), function, new_args)
+                    return Self::do_call(Some(ctx), function, new_args)
                         .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
@@ -149,6 +149,18 @@ impl Interpreter {
                     _ => panic!(">//< I don't know how to preform '{}'!", op)
                 }))
             },
+
+            Expr::RealFnLiteral { spec, body } => {
+                return Rc::new(
+                    RefCell::new(
+                        Value::RealFn {
+                            ctx,
+                            spec,
+                            body
+                        }
+                    )
+                )
+            }
 
             Expr::Ref(inner_expr) => {
                 let value = Self::expr(ctx.clone(), *inner_expr);
@@ -344,7 +356,7 @@ impl Interpreter {
             Statement::Loop(body) => match Self::do_loop(ctx, *body) {
                 StatementControl::Break => return StatementControl::Default,
                 StatementControl::EarlyReturn(v) => return StatementControl::EarlyReturn(v),  // may or may not fucking work
-                _ => unreachable!(">//< I WAS THREE SHEDLETSKIES AWAY HOW DID BRO HIT ME??!")
+                _ => unreachable!("you might actually be stupid")
             },
         }
     }

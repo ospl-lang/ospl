@@ -1,9 +1,9 @@
 [package]
 name = "ospl"
-version = "0.0.11"
+version = "0.0.12"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "the (UNFINISHED!!!) OSPL programming language"
 authors = ["Oscar Langlois <ocyalt4@gmail,com>", "Colton Wollinger <cwoll1home@gmail.com>"]
-homepage = "http://qwatys.space/"
+homepage = "https://ospl-lang.github.io"
 readme = "README.md"

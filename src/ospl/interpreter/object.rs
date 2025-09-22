@@ -37,7 +37,7 @@ impl Interpreter {
         if let Value::Object { symbols: obj_hm, .. } = &*obj.borrow() {
             if let Some(init_fn) = obj_hm.get("_init") {
                 // Pass obj so _init can mutate it
-                let _ = Self::do_function_call(
+                let _ = Self::do_macro_call(
                     Some(ctx.clone()),
                     init_fn.clone(),
                     vec![obj.clone()]

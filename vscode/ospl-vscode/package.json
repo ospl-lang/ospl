@@ -31,6 +31,13 @@
         "scopeName": "source.ospl",
         "path": "./syntaxes/ospl.tmLanguage.json"
       }
+    ],
+    "themes": [
+      {
+        "label": "OSPL Default",
+        "uiTheme": "vs-dark",
+        "path": "./themes/ospl-default.json"
+      }
     ]
   },
   "license": "GPL-3.0-or-later",

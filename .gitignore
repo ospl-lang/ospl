@@ -2,3 +2,4 @@
 scrap.rs
 test*.ospl
 *.lock
+.specstory/

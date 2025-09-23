@@ -1,3 +1,4 @@
 /target
 scrap.rs
 test*.ospl
+*.lock

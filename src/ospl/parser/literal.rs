@@ -224,18 +224,21 @@ impl Parser {
     }
 
     const KV_PAIR_SEP: char = ':';
+
+    /// touch any of these `?` and the mixmap literals will break.
+    /// I AM WARNING YOU.
     pub fn parse_kv_pair(&mut self) -> Option<(String, Rc<RefCell<Expr>>)> {
         let id = self.identifier()?;
         self.skip_ws();
         self.expect_char(Self::KV_PAIR_SEP)?;
         self.skip_ws();
-        let value = self.expr()?;
+        let expr = self.expr()?;
 
         return Some((
             id,
             Rc::new(
                 RefCell::new(
-                    value
+                    expr
                 )
             )
         ))
@@ -325,22 +328,32 @@ impl Parser {
 
     const CLASS_LITERAL_SYMBOLS_OPEN: char = '{';
     const CLASS_LITERAL_SYMBOLS_CLOSE: char = '}';
+    const CLASS_LITERAL_SYMBOLS_SEP: char = ',';
     fn construct_class_symbols(&mut self) -> Option<HashMap<String, Rc<RefCell<Expr>>>> {
+        self.skip_ws();
         self.expect_char(Self::CLASS_LITERAL_SYMBOLS_OPEN)?;
 
         let mut parents: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
 
         loop {
             self.skip_ws();
-            match self.next_char() {
-                Some(Self::CLASS_LITERAL_SYMBOLS_CLOSE) => break,
+            match self.peek() {
+                Some(Self::CLASS_LITERAL_SYMBOLS_CLOSE) => {
+                    self.pos += 1;
+                    break
+                },
+                Some(Self::CLASS_LITERAL_SYMBOLS_SEP) => {
+                    self.pos += 1;
+                    continue;
+                }
                 Some(_) => {
-                    let Some((id, ex)) = self.parse_kv_pair() else {
+                    if let Some((id, ex)) = self.attempt(Self::parse_kv_pair) {
+                        parents.insert(id, ex)
+                    }
+                    else {
                         self.parse_error("expected valid key-value pair")
                     };
-
-                    parents.insert(id, ex);
-                }
+                },
                 _ => self.parse_error("unexpected EOF in key-value pair parsing")
             }
         }
@@ -349,7 +362,7 @@ impl Parser {
     }
 
     const CLASS_LITERAL_PARENTS_OPEN: char = '(';
-    const CLASS_LITERAL_PARENTS_CLOSE: char = '(';
+    const CLASS_LITERAL_PARENTS_CLOSE: char = ')';
     const CLASS_LITERAL_PARENTS_SEP: char = ',';
     fn construct_class_parents(&mut self) -> Vec<Rc<RefCell<Expr>>> {
         // ensure we actually HAVE to parse any parents
@@ -359,6 +372,7 @@ impl Parser {
 
         let mut parents: Vec<Rc<RefCell<Expr>>> = Vec::new();
         loop {
+            self.skip_ws();
             match self.peek() {
                 Some(Self::CLASS_LITERAL_PARENTS_CLOSE) => {
                     self.pos += 1;
@@ -388,20 +402,20 @@ impl Parser {
 
     const CLASS_LITERAL_KW: &str = "cls";
 
-    /// parse a class literal that has NO PARENTS BECAUSE FUCK MY DAD
     pub fn class_literal(&mut self) -> Option<Expr> {
         if !self.match_next(Self::CLASS_LITERAL_KW) {
             return None
         }
         self.skip_ws();
 
-        //let parents: Vec<Rc<RefCell<Expr>>> = self.construct_class_parents();
-        // disable parents
-        let parents: Vec<Rc<RefCell<Expr>>> = vec![];
+        let parents: Vec<Rc<RefCell<Expr>>> = self.construct_class_parents();
 
-        let symbols: HashMap<String, Rc<RefCell<Expr>>> = self.construct_class_symbols()?;
+        // disable parents for builds cuz its broken rn
+        //let parents: Vec<Rc<RefCell<Expr>>> = vec![];
 
-        // ==== SYMBOLS ====
+        let symbols: HashMap<String, Rc<RefCell<Expr>>> = self.construct_class_symbols()
+            .unwrap_or_else(|| self.parse_error("no class symbol block given"));
+
         return Some(
             Expr::ClassLiteral {
                 parents,
@@ -431,20 +445,20 @@ impl Parser {
 
         else if let Some(v) = self.find_peek_or_consume(
             vec![
-                Self::VOID_KW,  // void
                 Self::NULL_KW,  // null
+                Self::VOID_KW,  // void
                 Self::TRUE_KW,  // true
                 Self::FALSE_KW  // false
             ]) {
             return match v.as_ref() {
-                // void
-                Self::VOID_KW => Some(
-                    Expr::Literal(Value::Void)
-                ),
-
                 // null
                 Self::NULL_KW => Some(
                     Expr::Literal(Value::Null)
+                ),
+
+                // void
+                Self::VOID_KW => Some(
+                    Expr::Literal(Value::Void)
                 ),
 
                 // true

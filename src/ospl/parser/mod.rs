@@ -214,7 +214,7 @@ impl Parser {
         if vec![
             // reserved words
             "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-            "check", "case", "destruct", "from", "print",
+            "check", "case", "destruct", "from", "print", "new",
             
             // types
             "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
@@ -227,22 +227,40 @@ impl Parser {
         return Some(id);
     }
 
-    pub fn primary_expr(&mut self) -> Option<Expr> {
+    const GROUP_OPEN: &str = "(*";
+    const GROUP_CLOSE: &str = "(*";
+    pub fn prefix_expr(&mut self) -> Option<Expr> {
         // ==== DO THE LHS ====
-        let lhs = if self.match_next("(*") {
+        let lhs = if self.match_next(Self::GROUP_OPEN) {
             // ==== GROUPING ====
             self.skip_ws();
             let inner = self.expr()?;                       // parse inside group
             self.skip_ws();
 
-            if self.match_next("*)") { inner }
-            else { panic!("bad group") }
+            if self.match_next(Self::GROUP_CLOSE) { inner }
+            else { self.parse_error("invalid grouping expression") }
         } else if let Some(v) = self.attempt(Self::literal) {
             // ==== LITERALS ====
             v
         } else if let Some(id) = self.attempt(Self::identifier) {
             // ==== VARS ====
-            Expr::Variable(Box::new(Expr::Literal(Value::String(id))))
+            Expr::Variable(
+                Box::new(
+                    Expr::Literal(
+                        Value::String(id)
+                    )
+                )
+            )
+        } else if self.match_next("new ") {
+            self.skip_ws();
+            let class = self.expr()
+                .unwrap_or_else(|| self.parse_error("invalid class after `new`"));
+
+            Expr::Construct(
+                Box::new(
+                    class
+                )
+            )
         } else {
             // WE HAVE NO IDEA WHAT THE LHS IS
             return None;
@@ -254,7 +272,7 @@ impl Parser {
     const PROP_ACCESS_CHAR: char = '.';
     const PROP_DYN_ACCESS_CHAR: char = ':';
     pub fn expr(&mut self) -> Option<Expr> {
-        let mut lhs = self.primary_expr()?;
+        let mut lhs = self.prefix_expr()?;
 
         // ==== POSTFIX OPS ====
         loop {
@@ -281,7 +299,7 @@ impl Parser {
             // property access (but dynamic this time)
             if self.peek_or_consume(Self::PROP_DYN_ACCESS_CHAR) {
                 self.skip_ws();
-                if let Some(ident) = self.expr() {  // surely that won't fucking memory leak, right?
+                if let Some(ident) = self.expr() {  // surely that won't blow the stack...
                     lhs = Expr::Property(
                         Box::new(lhs),
                         Box::new(ident),
@@ -315,7 +333,7 @@ impl Parser {
                 continue;
             }
 
-            break; // no more postfix
+            break;
         }
 
         // ==== INFIX OPS ====

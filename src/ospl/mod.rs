@@ -362,7 +362,10 @@ pub enum Statement {
         left: Box<Expr>,
         right: Box<Expr>,
     },
-    VarDeclaration {
+    Delete {
+        left: Box<Expr>,
+    },
+    Declaration {
         left: Box<Expr>,
         right: Box<Expr>,
     },
@@ -396,7 +399,7 @@ pub enum Statement {
         matching: Box<Expr>,
         cases: Vec<(Vec<Subspec>, Block)>,
     },
-    Loop(Box<Block>)
+    Loop(Box<Block>),
 }
 
 ///////////////////////////////////////////////////////////////////////////////

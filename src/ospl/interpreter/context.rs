@@ -80,4 +80,8 @@ impl Context {
     pub fn merge_with(&mut self, other: Context) {
         self.vars.extend(other.vars);
     }
+
+    pub fn delete(&mut self, key: &str) {
+        self.vars.remove(key);
+    }
 }

@@ -106,6 +106,18 @@ impl Interpreter {
                                 .clone()
                         }
                     }
+                    Value::Object { symbols } => {
+                        symbols
+                            .get(b_key.as_str())
+                            .expect(
+                                &format!(
+                                    "failed to retrive key `{}` in object: `{:#?}`",
+                                    b_key,
+                                    symbols
+                                )
+                            )
+                            .clone()
+                    }
                     _ => a_value.clone()  // Already Rc<RefCell<Value>>
                 };
 
@@ -287,7 +299,7 @@ impl Interpreter {
                 return StatementControl::Default
             },
             
-            Statement::VarDeclaration { left, right } => {
+            Statement::Declaration { left, right } => {
                 let var: String = Self::expr(ctx.clone(), *left)
                     .borrow()
                     .into_id();
@@ -358,6 +370,16 @@ impl Interpreter {
                 StatementControl::EarlyReturn(v) => return StatementControl::EarlyReturn(v),  // may or may not fucking work
                 _ => unreachable!("you might actually be stupid")
             },
+
+            Statement::Delete { left } => {
+                match *left {
+                    Expr::Variable(v) => ctx.borrow_mut().delete(
+                        &Self::expr(ctx.clone(), *v).borrow().into_id()
+                    ),
+                    _ => panic!("I don't know how the hell to delete that")
+                };
+                return StatementControl::Default;
+            }
         }
     }
 

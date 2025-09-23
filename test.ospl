@@ -16,6 +16,9 @@
         print "unreachable\n";
     };
 
+    def a = 0d;
+    a = 1d;
+
     select result {
         case (6) {
             print "result is 6\n";

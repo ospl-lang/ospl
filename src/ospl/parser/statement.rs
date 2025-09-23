@@ -19,7 +19,7 @@ impl Parser {
     }
 
     pub fn assignment(&mut self) -> Option<Statement> {
-        let id: String = self.identifier()?;
+        let id = self.expr()?;
         self.skip_ws();
         self.expect_char('=')?;
         self.skip_ws();
@@ -27,13 +27,14 @@ impl Parser {
 
         return Some(Statement::Assign {
             left: Box::new(
-                Expr::Variable(
+                /* Expr::Variable(
                     Box::new(
                         Expr::Literal(
                             Value::String(id)
                         )
                     )
-                )
+                ) */
+               id
             ),
             right: Box::new(rhs)
         });
@@ -64,7 +65,7 @@ impl Parser {
         }
 
         // construct a statement
-        return Some(Statement::VarDeclaration {
+        return Some(Statement::Declaration {
             left: Box::new(
                 Expr::Literal(
                     Value::String(id)

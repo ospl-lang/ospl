@@ -20,10 +20,27 @@ fn make_test_ast() -> Block {
                     )
                 )
             },
+            Statement::Assign {
+                left: Box::new(
+                    Expr::Property(
+                        Expr::var("t"),
+                        Expr::litstr("0")
+                    )
+                ),
+                right: Expr::litstr("hi")
+            },
+            Statement::Print {
+                thing: Box::new(
+                    Expr::Property(
+                        Expr::var("t"),
+                        Expr::litstr("0")
+                    )
+                )
+            },
             Statement::Return(
                 Expr::Property(
                     Expr::var("t"),
-                    Expr::litstr("1"),
+                    Expr::litstr("0")
                 )
             )
         ]
@@ -31,7 +48,7 @@ fn make_test_ast() -> Block {
 }
 
 #[test]
-fn tuple_prop_access() {
+fn tuple_prop_set() {
     let ast = make_test_ast();
 
     let root: interpreter::Context = interpreter::Context::new(None);
@@ -42,5 +59,5 @@ fn tuple_prop_access() {
         ast
     ).unwrap();
 
-    assert!(*result.borrow() == Value::SignedQuadrupleWord(2));
+    assert!(*result.borrow() == Value::String("hi".into()))
 }

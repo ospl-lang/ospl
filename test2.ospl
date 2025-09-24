@@ -1,8 +1,8 @@
 {
     def o = obj {
         a: "hi"
-        f: fn() {
-            return void;
+        f: fn(?me) {
+            print me;
         }
     };
 

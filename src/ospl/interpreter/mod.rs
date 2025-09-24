@@ -82,17 +82,24 @@ impl Interpreter {
             Expr::Property(a, b) => {
                 let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
 
-                let val: Rc<RefCell<Value>> = match &*a_value.borrow() {
+                match &*a_value.borrow() {
                     Value::Tuple(t) => {
+                        // set current instance
+                        ctx.borrow_mut().current_instance = Some(a_value.clone());
+
                         let idx: usize = b_key.parse::<usize>().expect(">//< non-integer tuple index");
 
-                        t
+                        return t
                             .get(idx)
                             .expect(">//< bad tuple index")
                             .clone()
                     },
+
                     Value::Mixmap { ordered, keyed } => {
-                        if let Ok(idx) = b_key.parse::<usize>() {
+                        // set current instance
+                        ctx.borrow_mut().current_instance = Some(a_value.clone());
+
+                        return if let Ok(idx) = b_key.parse::<usize>() {
                             // Rc clone
                             ordered
                                 .get(idx)
@@ -107,7 +114,10 @@ impl Interpreter {
                         }
                     }
                     Value::Object { symbols } => {
-                        symbols
+                        // set current instance
+                        ctx.borrow_mut().current_instance = Some(a_value.clone());
+
+                        return symbols
                             .get(b_key.as_str())
                             .expect(
                                 &format!(
@@ -118,10 +128,8 @@ impl Interpreter {
                             )
                             .clone()
                     }
-                    _ => a_value.clone()  // Already Rc<RefCell<Value>>
+                    _ => return a_value.clone()  // Already Rc<RefCell<Value>>
                 };
-
-                return val
             }
 
             // if it's a function call, we go and handle that
@@ -132,7 +140,7 @@ impl Interpreter {
                     .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
-                    return Self::do_call(Some(ctx), function, new_args)
+                    return Self::do_call(Some(ctx.clone()), function, new_args)
                         .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
@@ -162,25 +170,13 @@ impl Interpreter {
                 }))
             },
 
-            Expr::RealFnLiteral { spec, body } => {
-                return Rc::new(
-                    RefCell::new(
-                        Value::RealFn {
-                            ctx,
-                            spec,
-                            body
-                        }
-                    )
-                )
-            }
-
             Expr::Ref(inner_expr) => {
                 let value = Self::expr(ctx.clone(), *inner_expr);
                 return Rc::new(RefCell::new(Value::Ref(value)))
             },
 
             Expr::Deref(inner_expr) => {
-                let evaluated = Self::expr(ctx.clone(), *inner_expr); // Rc<RefCell<Value>>
+                let evaluated = Self::expr(ctx.clone(), *inner_expr);
 
                 let inner_rc = {
                     let borrowed = evaluated.borrow();       // Ref<Value>
@@ -195,7 +191,7 @@ impl Interpreter {
             },
 
             Expr::Construct(inner_expr) => {
-                let evaluated = Self::expr(ctx.clone(), *inner_expr); // Rc<RefCell<Value>>
+                let evaluated = Self::expr(ctx.clone(), *inner_expr);
 
                 return Self::class_construct(ctx, evaluated)
             },
@@ -272,6 +268,18 @@ impl Interpreter {
                 return Rc::new(
                     RefCell::new(
                         Value::Object { symbols: new_hm }
+                    )
+                )
+            },
+
+            Expr::RealFnLiteral { spec, body } => {
+                return Rc::new(
+                    RefCell::new(
+                        Value::RealFn {
+                            ctx: Rc::downgrade(&ctx),
+                            spec,
+                            body
+                        }
                     )
                 )
             }

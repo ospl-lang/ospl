@@ -441,6 +441,7 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
     let ast = p.block().expect("invalid or no AST.");
+    println!("ast: {:#?}", &ast);
 
     let _ = Interpreter::block(ctx.clone(), ast);
     /* println!("{:#?}", result);

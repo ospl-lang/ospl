@@ -61,6 +61,17 @@ impl Interpreter {
                         .clone();  // clone or use `take()` if you want to move it
 
                     b.set(&id, Value::Ref(thing));  // operate with the same mutable borrow
+
+                    /* we want to UNSET the current_instance after any
+                     * destructions, we don't want that to linger around.
+                     * 
+                     * THIS IS A VERY, EXTREMELY RETARDED WAY OF DOING THIS!
+                     * the "elegant" solution is to create a new context for
+                     * every property access, with current_instance being set
+                     * accordingly, but that is a lot of allocations, and
+                     * allocs don't grow on trees (unfortunately...)
+                     */
+                    ctx.borrow_mut().current_instance.take();
                 }
             };
         }
@@ -135,7 +146,7 @@ impl Interpreter {
             RefCell::new(
                 Context::new(
                     Some(
-                        ctx.clone()
+                        ctx.upgrade()?.clone()
                     )
                 )
             )

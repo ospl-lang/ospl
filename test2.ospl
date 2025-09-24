@@ -1,10 +1,10 @@
 {
     def o = obj {
-        a: "this is the value of A"
-        b: "this is the value of B"
+        a: "hi"
+        f: fn() {
+            return void;
+        }
     };
 
-    print o.a;
-    o.a = "a"
     print o.a;
 }

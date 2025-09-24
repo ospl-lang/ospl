@@ -247,6 +247,7 @@ impl Parser {
     const OBJ_LIT_KW: &str = "obj";
     const OBJ_LIT_OPEN: char = '{';
     const OBJ_LIT_CLOSE: char = '}';
+    const OBJ_LIT_SEP: char = ',';
     pub fn obj_literal(&mut self) -> Option<Expr> {
         if !self.match_next(Self::OBJ_LIT_KW) {
             return None
@@ -264,10 +265,15 @@ impl Parser {
                     self.pos += 1;
                     break;
                 },
+                Some(Self::OBJ_LIT_SEP) => {
+                    self.pos += 1;
+                    continue;
+                },
                 Some(_) => {
                     let Some((id, ex)) = self.parse_kv_pair() else {
                         self.parse_error("invalid key-value pair")
                     };
+
                     members.insert(
                         id,
                         ex

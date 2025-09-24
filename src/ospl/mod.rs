@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, cmp::Ordering, collections::HashMap, fmt::Display, ops::{Add, Div, Mul, Sub}, rc::Rc
+    cell::RefCell, cmp::Ordering, collections::HashMap, fmt::Display, ops::{Add, Div, Mul, Sub}, rc::{Rc, Weak}
 };
 
 use crate::Context;
@@ -17,6 +17,7 @@ pub enum Subspec {
 
 pub mod interpreter;
 pub mod parser;
+pub mod imports;
 
 ///////////////////////////////////////////////////////////////////////////////
 // values and types
@@ -60,7 +61,10 @@ pub enum Value {
         body: Block,
     },
     RealFn {
-        ctx: Rc<RefCell<Context>>,
+        // weak pointer reason:
+        // if the context drops, the function is guaranteed (I think?) to also
+        // have been dropped.
+        ctx: Weak<RefCell<Context>>,
         spec: Vec<Subspec>,
         body: Block,
     },
@@ -388,7 +392,6 @@ pub enum Statement {
         on_true: Block,
         on_false: Option<Block>  // you don't need an else
     },
-
 
     // switch
     Check {

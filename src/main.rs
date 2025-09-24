@@ -8,6 +8,10 @@ use crate::ospl::{
 };
 
 fn main() {
+    runfile("test2.ospl".into(), "block");
+}
+
+fn main2() {
     // no clap or anything because I hate myself
     let arg: Vec<String> = args().collect();
     let cmd = &arg.get(1).expect("please specify a command on the command line!");

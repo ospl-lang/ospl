@@ -23,10 +23,10 @@ impl Interpreter {
         spec: Vec<Subspec>,
         args: Vec<Rc<RefCell<Value>>>
     ) -> Result<(), DestructionError> {
-        // should ALWAYS be true at runtime, otherwise someone fucked it up.
-        if spec.len() != args.len() {
-            return Err(DestructionError::MismatchedArgumentCount)
-        }
+        // trying to make this check work but I think its meant to go at the end
+        // I dont fucking know I JUST WANNA SHIP MAN FUCK SAKE
+        let mut needed_len = spec.len();
+        let actual_len = args.len();
 
         for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
             match subspec {
@@ -86,6 +86,12 @@ impl Interpreter {
                 Subspec::Ignore => {}
             };
         }
+
+        // feel free to turn this off if you want speed
+        if needed_len != actual_len {
+            panic!("fuck");
+        };
+
         return Ok(());
     }
 

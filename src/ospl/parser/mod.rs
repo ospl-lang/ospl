@@ -264,9 +264,16 @@ impl Parser {
         } else if self.peek_or_consume('@') {  // deref
             // whitespace is not allowed
             let expr = self.expr()
-                .expect("expected expression");
+                .unwrap_or_else(|| self.parse_error("expected expression to deref"));
 
             Expr::Deref(
+                Box::new(expr)
+            )
+        } else if self.peek_or_consume('$') { // ref
+            let expr = self.expr()
+                .unwrap_or_else(|| self.parse_error("expected expression to ref"));
+
+            Expr::Ref(
                 Box::new(expr)
             )
         } else {

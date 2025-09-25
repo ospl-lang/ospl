@@ -1,9 +1,9 @@
 {
     def o = obj {
-        a: "hi"
-        b: "hi2"
-        f: fn(?this) {
-            print g{@this}.b;
+        a: "hi\n"
+        b: "hi2\n"
+        f: fn(?me) {
+            print g{@me}.b;
         }
     };
 

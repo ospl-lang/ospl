@@ -183,7 +183,8 @@ impl Parser {
         return Some(Block(stmts));
     }
 
-    fn stmts_unenclosed(&mut self) -> Option<Vec<Statement>> {
+    fn stmts(&mut self) -> Option<Vec<Statement>> {
+        self.expect_char('{')?;
         let mut stmts: Vec<Statement> = Vec::new();
         loop {
             self.skip_ws();
@@ -210,15 +211,34 @@ impl Parser {
         self.skip_ws();
         return Some(stmts)
     }
-
-    /// parses a list of statements, seperated by semicolons
-    /// and enclosed in `{...}`
-    fn stmts(&mut self) -> Option<Vec<Statement>> {
-        self.skip_ws();
-        self.expect_char('{')?;
-        return self.stmts_unenclosed();
-    }
     
+    fn module_root_stmts(&mut self) -> Option<Vec<Statement>> {
+        let mut stmts: Vec<Statement> = Vec::new();
+        loop {
+            self.skip_ws();
+            match self.peek() {
+                Some(';') => {
+                    self.pos += 1;
+                    continue;
+                }
+                Some(_) => {
+                    if let Some(stmt) = self.stmt() {
+                        stmts.push(stmt);
+                        self.skip_ws();
+                    } else {
+                        break;
+                    }
+                },
+
+                // on EOF we just return
+                _ => break
+            }
+        }
+
+        self.skip_ws();
+        return Some(stmts)
+    }
+
     /// parse a single identifier
     fn identifier(&mut self) -> Option<String> {
         let mut id: String = String::new();
@@ -492,7 +512,7 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
-    let ast = p.stmts_unenclosed().expect("invalid or no AST.");
+    let ast = p.module_root_stmts().expect("invalid or no AST.");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
     // println!("ast: {:#?}", &ast);

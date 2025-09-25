@@ -20,7 +20,7 @@ fn main() {
     match cmd.as_ref() {
         "run" | "exe" | "r" => runfile(
             arg.get(2).expect("please specify a path to the script you wish to run").clone(),
-            "block"
+            "stmts"
         ),
         "run-expr" => runfile(
             arg.get(2).expect("please specify a path to the script you wish to run").clone(),
@@ -47,6 +47,7 @@ fn runfile(path: String, target: &str) {
 
     // run!
     match target.as_ref() {
+        "stmts" => parser::stmts(ctx.clone(), p, &s),
         "block" => parser::block(ctx.clone(), p, &s),
         "stmt" => parser::stmt(ctx.clone(), p, &s),
         "expr" => parser::expr(ctx.clone(), p, &s),

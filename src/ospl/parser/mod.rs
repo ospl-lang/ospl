@@ -183,10 +183,7 @@ impl Parser {
         return Some(Block(stmts));
     }
 
-    /// parses a list of statements, seperated by semicolons
-    /// and enclosed in `{...}`
-    fn stmts(&mut self) -> Option<Vec<Statement>> {
-        self.expect_char('{')?;
+    fn stmts_unenclosed(&mut self) -> Option<Vec<Statement>> {
         let mut stmts: Vec<Statement> = Vec::new();
         loop {
             self.skip_ws();
@@ -211,7 +208,15 @@ impl Parser {
         }
 
         self.skip_ws();
-        return Some(stmts);
+        return Some(stmts)
+    }
+
+    /// parses a list of statements, seperated by semicolons
+    /// and enclosed in `{...}`
+    fn stmts(&mut self) -> Option<Vec<Statement>> {
+        self.skip_ws();
+        self.expect_char('{')?;
+        return self.stmts_unenclosed();
     }
     
     /// parse a single identifier
@@ -480,6 +485,19 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     // println!("ast: {:#?}", &ast);
 
     let _ = Interpreter::block(ctx.clone(), ast);
+    /* println!("{:#?}", result);
+    println!("{:#?}", ctx); */
+}
+
+pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
+    p.feed(s);
+    p.skip_ws();  // go to the first meaningful item
+    let ast = p.stmts_unenclosed().expect("invalid or no AST.");
+
+    // DONT LEAVE THIS IN PROD DUMBFUCK
+    // println!("ast: {:#?}", &ast);
+
+    let _ = Interpreter::block(ctx.clone(), Block(ast));
     /* println!("{:#?}", result);
     println!("{:#?}", ctx); */
 }

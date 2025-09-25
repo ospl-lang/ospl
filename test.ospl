@@ -1,32 +1,29 @@
-{
-    #%import 
-    def add = fn((a, b), c) {
-        def z = a + b + c;
-        return z;
-    };
-    print "hello world!\n";
+def add = fn((a, b), c) {
+    def z = a + b + c;
+    return z;
+};
+print "hello world!\n";
 
-    def result = add((1, 2), 6);
-    if result == 6 {
-        print "result is equal to 6\n";
-    } else if result < 6 {
-        print "result is less than 6\n";
-    } else if result > 6 {
-        print "result is greater than 6\n";
-    } else {
-        print "unreachable\n";
-    };
+def result = add((1, 2), 6);
+if result == 6 {
+    print "result is equal to 6\n";
+} else if result < 6 {
+    print "result is less than 6\n";
+} else if result > 6 {
+    print "result is greater than 6\n";
+} else {
+    print "unreachable\n";
+};
 
-    def a = 0d;
-    a = 1d;
+def a = 0d;
+a = 1d;
 
-    select result {
-        case (6) {
-            print "result is 6\n";
-        }
+select result {
+    case (6) {
+        print "result is 6\n";
+    }
 
-        case (_) {
-            print "result isn't 6\n";
-        }
-    };
-}
+    case (_) {
+        print "result isn't 6\n";
+    }
+};

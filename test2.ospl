@@ -3,7 +3,7 @@
         a: "hi\n"
         b: "hi2\n"
         f: fn(?this) {
-            print g{@this}.b;
+            print [@this].b;
         }
     };
 

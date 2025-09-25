@@ -42,7 +42,8 @@ impl Parser {
 
     fn peek_or_consume(&mut self, target: char) -> bool {
         let c = self.peek()
-            .unwrap_or_else(|| self.parse_error("unexpected EOF in peek_or_consume"));
+            .unwrap_or('\0');  // string terminator
+            // .unwrap_or_else(|| self.parse_error("unexpected EOF in peek_or_consume"));
 
         if c == target {
             self.pos += c.len_utf8();
@@ -144,8 +145,26 @@ syntax or parse error at char {} ({}): {}
     }
 
     fn skip_ws(&mut self) {
-        self.consume_while(|c|
-            c.is_whitespace());
+        loop {
+            self.consume_while(|c| c.is_whitespace());
+
+            // endl comments
+            if self.peek_or_consume('#') {
+                self.consume_while(|c| c != '\n');
+            }
+
+            // multiline comments
+            else if self.match_next("*****") {
+                while !self.match_next("*****") {
+                    self.next_char();
+                }
+            }
+
+            // nothing left to skip
+            else {
+                break;
+            }
+        }
     }
 }
 
@@ -165,7 +184,7 @@ impl Parser {
     }
 
     /// parses a list of statements, seperated by semicolons
-    /// and enclosed in `{`
+    /// and enclosed in `{...}`
     fn stmts(&mut self) -> Option<Vec<Statement>> {
         self.expect_char('{')?;
         let mut stmts: Vec<Statement> = Vec::new();
@@ -227,8 +246,8 @@ impl Parser {
         return Some(id);
     }
 
-    const GROUP_OPEN: &str = "g{";
-    const GROUP_CLOSE: &str = "}";
+    const GROUP_OPEN: &str = "[";
+    const GROUP_CLOSE: &str = "]";
     pub fn prefix_expr(&mut self) -> Option<Expr> {
         // ==== DO THE LHS ====
         let lhs = if self.match_next(Self::GROUP_OPEN) {

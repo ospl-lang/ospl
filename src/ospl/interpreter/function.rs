@@ -108,7 +108,7 @@ impl Interpreter {
         args: Vec<Rc<RefCell<Value>>>
     ) -> Option<Rc<RefCell<Value>>> {
         match *f.borrow() {
-            Value::RealFn {..} => return Self::do_fn_call(ctx, f.clone(), args),
+            Value::RealFn {..} => return Self::do_fn_call(f.clone(), args),
             Value::MacroFn {..} => return Self::do_macro_call(ctx, f.clone(), args),
             _ => panic!("tried to call an uncallable value")
         }
@@ -163,7 +163,6 @@ impl Interpreter {
     }
 
     pub fn do_fn_call(
-        ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>,
     ) -> Option<Rc<RefCell<Value>>> {

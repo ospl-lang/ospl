@@ -156,16 +156,34 @@ impl Interpreter {
 
                 // dispatch the correct op
                 return Rc::new(RefCell::new(match op.as_str() {
+                    // normal ones
                     "+" => lvalue + rvalue,  // these return the same type as the lhs.
                     "-" => lvalue - rvalue,
                     "*" => lvalue * rvalue,
                     "/" => lvalue / rvalue,
+
+                    // comparison
                     "==" => Value::Bool(lvalue == rvalue),  // these are stupid and don't do that
                     "!=" => Value::Bool(lvalue != rvalue),
                     "<" => Value::Bool(lvalue < rvalue),
                     ">" => Value::Bool(lvalue > rvalue),
                     ">=" => Value::Bool(lvalue >= rvalue),
                     "<=" => Value::Bool(lvalue <= rvalue),
+
+                    // logical and/or/xor
+                    "&" => Value::Bool(lvalue.truthiness() && rvalue.truthiness()),
+                    "|" => Value::Bool(lvalue.truthiness() || rvalue.truthiness()),
+                    "^" => Value::Bool(lvalue.truthiness() ^ rvalue.truthiness()),
+
+                    // bitwise and/or/xor
+                    "&&" => lvalue & rvalue,
+                    "||" => lvalue | rvalue,
+                    "^^" => lvalue ^ rvalue,
+
+                    // shifting
+                    ">>" => lvalue >> rvalue,
+                    "<<" => lvalue << rvalue,
+
                     _ => panic!(">//< I don't know how to preform '{}'!", op)
                 }))
             },

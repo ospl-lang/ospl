@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, cmp::Ordering, collections::HashMap, fmt::Display, ops::{Add, Div, Mul, Sub}, rc::{Rc, Weak}
+    cell::RefCell, cmp::Ordering, collections::HashMap, fmt::Display, ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub}, rc::{Rc, Weak}
 };
 
 use crate::Context;
@@ -232,6 +232,36 @@ macro_rules! typical_op {
     }};
 }
 
+macro_rules! typical_op_assign {
+    ($lhs:expr, $rhs:expr, $op:tt) => {{
+        match ($lhs, $rhs) {
+            // integer types
+            (Value::Byte(a), Value::Byte(b))                                => *a $op b,
+            (Value::SignedByte(a), Value::SignedByte(b))                    => *a $op b,
+            (Value::Word(a), Value::Word(b))                                => *a $op b,
+            (Value::SignedWord(a), Value::SignedWord(b))                    => *a $op b,
+            (Value::DoubleWord(a), Value::DoubleWord(b))                    => *a $op b,
+            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => *a $op b,
+            (Value::QuadrupleWord(a), Value::QuadrupleWord(b))              => *a $op b,
+            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))  => *a $op b,
+
+            // float types
+            (Value::Half(a), Value::Half(b))                                => *a $op b,
+            (Value::Single(a), Value::Single(b))                            => *a $op b,
+            (Value::Float(a), Value::Float(b))                              => *a $op b,
+
+            // stuff you CANNOT do
+            (Value::Null, _)                                                => panic!(">//< can't operate to Null!"),
+            (_, Value::Null)                                                => panic!(">//< can't operate with Null!"),
+
+            (Value::Void, _)                                                => panic!(">//< can't operate to Void!"),
+            (_, Value::Void)                                                => panic!(">//< can't operate with Void!"),
+
+            _ => panic!("I don't know how to do this operation on these types (possible type saftey issue)!")
+        }
+    }};
+}
+
 macro_rules! typical_cmp {
     ($lhs:expr, $rhs:expr, $op:tt) => {{
         match ($lhs, $rhs) {
@@ -264,6 +294,57 @@ macro_rules! typical_cmp {
     }};
 }
 
+macro_rules! bit_op {
+    ($lhs:expr, $rhs:expr, $op:tt) => {
+        match ($lhs, $rhs) {
+            (Value::Byte(a), Value::Byte(b))                              => Value::Byte(a $op b),
+            (Value::SignedByte(a), Value::SignedByte(b))                  => Value::SignedByte(a $op b),
+            (Value::Word(a), Value::Word(b))                              => Value::Word(a $op b),
+            (Value::SignedWord(a), Value::SignedWord(b))                  => Value::SignedWord(a $op b),
+            (Value::DoubleWord(a), Value::DoubleWord(b))                  => Value::DoubleWord(a $op b),
+            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))      => Value::SignedDoubleWord(a $op b),
+            (Value::QuadrupleWord(a), Value::QuadrupleWord(b))            => Value::QuadrupleWord(a $op b),
+            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))=> Value::SignedQuadrupleWord(a $op b),
+            _ => panic!("i dont know WHAT the fuck you're doing, but you shouldn't be doing it"),
+        }
+    };
+}
+
+impl BitAnd for Value {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        return bit_op!(&self, &rhs, &)
+    }
+}
+
+impl BitOr for Value {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        return bit_op!(&self, &rhs, |)
+    }
+}
+
+impl BitXor for Value {
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        return bit_op!(&self, &rhs, ^)
+    }
+}
+
+impl Shl for Value {
+    type Output = Self;
+    fn shl(self, rhs: Self) -> Self::Output {
+        return bit_op!(&self, &rhs, <<)
+    }
+}
+
+impl Shr for Value {
+    type Output = Self;
+    fn shr(self, rhs: Self) -> Self::Output {
+        return bit_op!(&self, &rhs, >>)
+    }
+}
+
 impl Eq for Value {}
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool { typical_cmp!(self, other, ==) }
@@ -285,7 +366,15 @@ impl Add for Value {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         return match (&self, &rhs) {
-            (Self::String(a), Self::String(b)) => Self::String(a.to_owned() + b.as_str()),
+            // append chars to string, might not be needed because typical_op
+            // might handle it correctly already, idk.
+            (Self::String(a), Self::String(b)) => {
+                let mut s = a.to_owned();
+                s.push_str(b.as_str());
+                Self::String(s)
+            },
+            
+            // append to tuple
             (Self::Tuple(a), b @ _) => Self::Tuple({
                 let mut cln = a.clone();
                 
@@ -304,10 +393,39 @@ impl Add for Value {
     }
 }
 
+// incomplete but I can't be fucked
+impl AddAssign for Value {
+    fn add_assign(&mut self, rhs: Self) {
+        match (self, rhs) {
+            (Self::String(a), Self::String(b)) => {
+                a.push_str(&b);
+            },
+            (Self::Tuple(a), b) => {
+                a.push(Rc::new(RefCell::new(b)));
+            },
+            (s, r) => typical_op_assign!(s, r, +=),
+        }
+    }
+}
+
 impl Sub for Value {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        return typical_op!(self, rhs, -)
+        return match (&self, &rhs) {
+            // pop N chars from string
+            (Self::String(a), Self::Byte(n)) => Self::String({
+                let mut s = a.to_owned();
+                let new_len = s.char_indices()
+                    .rev()
+                    .nth(*n as usize)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
+
+                s.truncate(new_len);
+                s
+            }),
+            _ => typical_op!(self, rhs, -)
+        }
     }
 }
 
@@ -441,7 +559,7 @@ pub enum Expr {
     RealFnLiteral {
         spec: Vec<Subspec>,
         body: Block,
-    }
+    },
 }
 
 impl Expr {

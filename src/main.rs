@@ -7,8 +7,9 @@ use crate::ospl::{
     interpreter::Context, parser::Parser, *
 };
 
-fn main2() {
-    runfile("test2.ospl".into(), "block");
+#[allow(dead_code)]
+fn use_this_as_main_temporarily_if_you_use_vscode_debugger() {
+    runfile("test.ospl".into(), "block");
 }
 
 fn main() {

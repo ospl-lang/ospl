@@ -1,9 +1,10 @@
 {
+    #%import 
     def add = fn((a, b), c) {
         def z = a + b + c;
         return z;
     };
-    print "hello world!\n"
+    print "hello world!\n";
 
     def result = add((1, 2), 6);
     if result == 6 {

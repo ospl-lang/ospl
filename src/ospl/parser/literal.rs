@@ -290,11 +290,19 @@ impl Parser {
         )
     }
 
-    const MIXMAP_LIT_OPEN: char = '[';
-    const MIXMAP_LIT_CLOSE: char = ']';
+    const MIXMAP_LIT_KW: &str = "mix";
+    const MIXMAP_LIT_OPEN: char = '{';
+    const MIXMAP_LIT_CLOSE: char = '}';
     const MIXMAP_LIT_SEP: char = ',';
     pub fn mixmap_literal(&mut self) -> Option<Expr> {
+        if !self.match_next(Self::MIXMAP_LIT_KW) {
+            return None
+        }
+
+        self.skip_ws();
+
         self.expect_char(Self::MIXMAP_LIT_OPEN)?;
+
         let mut positionals: Vec<Rc<RefCell<Expr>>> = Vec::new();
         let mut keyed: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
         loop {
@@ -407,7 +415,6 @@ impl Parser {
     }
 
     const CLASS_LITERAL_KW: &str = "cls";
-
     pub fn class_literal(&mut self) -> Option<Expr> {
         if !self.match_next(Self::CLASS_LITERAL_KW) {
             return None
@@ -432,8 +439,6 @@ impl Parser {
 
     const VOID_KW: &str = "void";
     const NULL_KW: &str = "null";
-
-    // true
     const TRUE_KW: &str = "true";
     const FALSE_KW: &str = "false";
     pub fn literal(&mut self) -> Option<Expr> {

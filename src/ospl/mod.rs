@@ -350,7 +350,7 @@ impl Display for Value {
             // DO NOT USE TO_STRING OR YOU WILL BLOW YOUR STACK
             Self::String(s) => s,
 
-            _ => "<unprintable>",
+            other @ _ => &format!("{:#?}", other),
         };
         write!(f, "{}", thing_to_write)
     }

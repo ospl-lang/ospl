@@ -17,7 +17,7 @@ pub struct Context {
     vars: HashMap<String, Rc<RefCell<Value>>>,
 
     /// The current instance we're doing
-    pub current_instance: Option<Rc<RefCell<Value>>>
+    pub current_instance: Option<Weak<RefCell<Value>>>
 }
 
 impl Context {

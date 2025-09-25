@@ -1,10 +1,12 @@
 {
     def o = obj {
         a: "hi"
-        f: fn(?me) {
-            print me;
+        b: "hi2"
+        f: fn(?this) {
+            print g{@this}.b;
         }
     };
 
-    print o.a;
+    o.f(1);
+    print "a\n";
 }

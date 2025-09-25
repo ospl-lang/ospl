@@ -3,6 +3,12 @@ use super::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 
+#[derive(Debug)]
+pub enum DestructionError {
+    MismatchedArgumentCount,
+    LiteralRequirementFailed
+}
+
 impl Interpreter {
     /// Destruct into a context
     /// 
@@ -16,10 +22,10 @@ impl Interpreter {
         ctx: Rc<RefCell<Context>>,
         spec: Vec<Subspec>,
         args: Vec<Rc<RefCell<Value>>>
-    ) -> Result<(), ()> {
+    ) -> Result<(), DestructionError> {
         // should ALWAYS be true at runtime, otherwise someone fucked it up.
         if spec.len() != args.len() {
-            return Err(())
+            return Err(DestructionError::MismatchedArgumentCount)
         }
 
         for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
@@ -32,6 +38,7 @@ impl Interpreter {
                         .clone()
                     );
                 },
+
                 Subspec::Bind(key) => {
                     ctx.borrow_mut().set(&key, 
                         // OSPL passes by value by default.
@@ -40,27 +47,29 @@ impl Interpreter {
                         .deep_clone()
                     );
                 },
+
                 Subspec::Destruct(tree) => Self::destruct_into(
                     ctx.clone(),
                     tree,
                     arg.borrow().clone().into_values()
                 )?,
-                Subspec::Ignore => {},
+
                 Subspec::Literal(v) => if *arg.borrow() != v {
-                    return Err(());
+                    return Err(DestructionError::LiteralRequirementFailed);
                 },
+
                 Subspec::ThisRef(id) => {
                     // this is ugly but we have to do it
                     // to make the borrow checker happy
                     let mut b = ctx.borrow_mut();
 
-                    let thing = b
+                    let this = b
                         .current_instance
                         .as_ref()
-                        .expect("agh")
-                        .clone();  // clone or use `take()` if you want to move it
+                        .expect("tried to use thisref when there is no thisref (or more than one thisref used)")
+                        .clone();
 
-                    b.set(&id, Value::Ref(thing));  // operate with the same mutable borrow
+                    b.set(&id, Value::Ref(this.upgrade().unwrap().clone()));  // operate with the same mutable borrow
 
                     /* we want to UNSET the current_instance after any
                      * destructions, we don't want that to linger around.
@@ -71,8 +80,10 @@ impl Interpreter {
                      * accordingly, but that is a lot of allocations, and
                      * allocs don't grow on trees (unfortunately...)
                      */
-                    ctx.borrow_mut().current_instance.take();
-                }
+                    b.current_instance.take();
+                },
+
+                Subspec::Ignore => {}
             };
         }
         return Ok(());
@@ -84,7 +95,7 @@ impl Interpreter {
         args: Vec<Rc<RefCell<Value>>>
     ) -> Option<Rc<RefCell<Value>>> {
         match *f.borrow() {
-            Value::RealFn {..} => return Self::do_fn_call(f.clone(), args),
+            Value::RealFn {..} => return Self::do_fn_call(ctx, f.clone(), args),
             Value::MacroFn {..} => return Self::do_macro_call(ctx, f.clone(), args),
             _ => panic!("tried to call an uncallable value")
         }
@@ -111,29 +122,37 @@ impl Interpreter {
         let child_ctx = Rc::new(
             RefCell::new(
                 Context::new(
-                    ctx
+                    ctx.clone()
                 )
             )
         );
+
+        // this shit is fucking retarded but I don't care I just wanna ship
+        // the damn language at this fucking point.
+        if let Some(parent_ctx) = ctx {
+            child_ctx.borrow_mut().current_instance = parent_ctx.borrow().current_instance.clone();
+        }
 
         // match via reference
         let f_ref = f.borrow(); // keep Ref<Value> alive
         let (spec, body) = match &*f_ref {
             Value::MacroFn { spec, body } => (spec, body),
-            _ => panic!(">//< tried to call non-macro: {:#?}!", f_ref),
+            _ => panic!("tried to call non-macro: {:#?}!", f_ref),
         };
 
         // assign arguments
         // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args).ok()?;
+        Self::destruct_into(child_ctx.clone(), spec.clone(), args)
+            .expect("failed macro call (destruction failed!)");
 
         // run the function body
         return Self::block(child_ctx, body.clone());
     }
 
     pub fn do_fn_call(
+        ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
-        args: Vec<Rc<RefCell<Value>>>
+        args: Vec<Rc<RefCell<Value>>>,
     ) -> Option<Rc<RefCell<Value>>> {
         let f_ref = f.borrow();
         let Value::RealFn { spec, body , ctx} = &*f_ref
@@ -152,8 +171,15 @@ impl Interpreter {
             )
         );
 
+        // this shit is fucking retarded but I don't care I just wanna ship
+        // the damn language at this fucking point.
+        if let Some(parent_ctx) = ctx.upgrade() {
+            child_ctx.borrow_mut().current_instance = parent_ctx.borrow().current_instance.clone();
+        }
+
         // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args).ok()?;
+        Self::destruct_into(child_ctx.clone(), spec.clone(), args)
+            .expect("failed function call (destruction failed!)");
 
         // run the function body
         return Self::block(child_ctx, body.clone());

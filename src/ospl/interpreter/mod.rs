@@ -85,7 +85,7 @@ impl Interpreter {
                 match &*a_value.borrow() {
                     Value::Tuple(t) => {
                         // set current instance
-                        ctx.borrow_mut().current_instance = Some(a_value.clone());
+                        ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
                         let idx: usize = b_key.parse::<usize>().expect(">//< non-integer tuple index");
 
@@ -97,7 +97,7 @@ impl Interpreter {
 
                     Value::Mixmap { ordered, keyed } => {
                         // set current instance
-                        ctx.borrow_mut().current_instance = Some(a_value.clone());
+                        ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
                         return if let Ok(idx) = b_key.parse::<usize>() {
                             // Rc clone
@@ -115,7 +115,7 @@ impl Interpreter {
                     }
                     Value::Object { symbols } => {
                         // set current instance
-                        ctx.borrow_mut().current_instance = Some(a_value.clone());
+                        ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
                         return symbols
                             .get(b_key.as_str())
@@ -140,8 +140,8 @@ impl Interpreter {
                     .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
-                    return Self::do_call(Some(ctx.clone()), function, new_args)
-                        .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
+                return Self::do_call(Some(ctx.clone()), function, new_args)
+                    .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
             // if it's an operation, we do some dispath

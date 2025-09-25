@@ -227,8 +227,8 @@ impl Parser {
         return Some(id);
     }
 
-    const GROUP_OPEN: &str = "(*";
-    const GROUP_CLOSE: &str = "(*";
+    const GROUP_OPEN: &str = "g{";
+    const GROUP_CLOSE: &str = "}";
     pub fn prefix_expr(&mut self) -> Option<Expr> {
         // ==== DO THE LHS ====
         let lhs = if self.match_next(Self::GROUP_OPEN) {
@@ -238,7 +238,7 @@ impl Parser {
             self.skip_ws();
 
             if self.match_next(Self::GROUP_CLOSE) { inner }
-            else { self.parse_error("invalid grouping expression") }
+            else { self.parse_error("invalid grouping expression (expected group closing marker)") }
         } else if let Some(v) = self.attempt(Self::literal) {
             // ==== LITERALS ====
             v
@@ -251,7 +251,7 @@ impl Parser {
                     )
                 )
             )
-        } else if self.match_next("new ") {
+        } else if self.match_next("new ") {  // class construction
             self.skip_ws();
             let class = self.expr()
                 .unwrap_or_else(|| self.parse_error("invalid class after `new`"));
@@ -260,6 +260,14 @@ impl Parser {
                 Box::new(
                     class
                 )
+            )
+        } else if self.peek_or_consume('@') {  // deref
+            // whitespace is not allowed
+            let expr = self.expr()
+                .expect("expected expression");
+
+            Expr::Deref(
+                Box::new(expr)
             )
         } else {
             // WE HAVE NO IDEA WHAT THE LHS IS
@@ -441,7 +449,9 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
     let ast = p.block().expect("invalid or no AST.");
-    println!("ast: {:#?}", &ast);
+
+    // DONT LEAVE THIS IN PROD DUMBFUCK
+    // println!("ast: {:#?}", &ast);
 
     let _ = Interpreter::block(ctx.clone(), ast);
     /* println!("{:#?}", result);

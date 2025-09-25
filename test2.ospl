@@ -2,11 +2,11 @@
     def o = obj {
         a: "hi\n"
         b: "hi2\n"
-        f: fn(?me) {
-            print g{@me}.b;
+        f: fn(?this) {
+            print g{@this}.b;
         }
     };
 
-    o.f(1);
+    o.f();
     print "a\n";
 }

@@ -5,7 +5,8 @@ use std::cell::RefCell;
 
 #[derive(Debug)]
 pub enum DestructionError {
-    MismatchedArgumentCount,
+    NotEnoughArgs,
+    TooManyArgs,
     LiteralRequirementFailed
 }
 
@@ -21,49 +22,22 @@ impl Interpreter {
     pub fn destruct_into(
         ctx: Rc<RefCell<Context>>,
         spec: Vec<Subspec>,
-        args: Vec<Rc<RefCell<Value>>>
+        arg_list: Vec<Rc<RefCell<Value>>>
     ) -> Result<(), DestructionError> {
-        // trying to make this check work but I think its meant to go at the end
-        // I dont fucking know I JUST WANNA SHIP MAN FUCK SAKE
-        let mut needed_len = spec.len();
-        let actual_len = args.len();
+        // fucking retarded whores over at The Rust Foundation don't make it
+        // easy to iterate in this very common situation, so we gotta do this
+        // retarded shit.
+        let mut args = arg_list.into_iter();
 
-        for (subspec, arg) in spec.into_iter().zip(args.into_iter()) {
+        for subspec in spec.into_iter() {
             match subspec {
-                Subspec::BindRef(key) => {
-                    ctx.borrow_mut().set(&key, 
-                        // this passes by reference
-                        arg
-                        .borrow()
-                        .clone()
-                    );
-                },
-
-                Subspec::Bind(key) => {
-                    ctx.borrow_mut().set(&key, 
-                        // OSPL passes by value by default.
-                        arg
-                        .borrow()
-                        .deep_clone()
-                    );
-                },
-
-                Subspec::Destruct(tree) => Self::destruct_into(
-                    ctx.clone(),
-                    tree,
-                    arg.borrow().clone().into_values()
-                )?,
-
-                Subspec::Literal(v) => if *arg.borrow() != v {
-                    return Err(DestructionError::LiteralRequirementFailed);
-                },
-
                 Subspec::ThisRef(id) => {
                     // this is ugly but we have to do it
                     // to make the borrow checker happy
                     let mut b = ctx.borrow_mut();
 
-                    let this = b
+                    let this =
+                        b
                         .current_instance
                         .as_ref()
                         .expect("tried to use thisref when there is no thisref (or more than one thisref used)")
@@ -83,14 +57,47 @@ impl Interpreter {
                     b.current_instance.take();
                 },
 
+                Subspec::BindRef(key) => {
+                    ctx.borrow_mut().set(&key, 
+                        // this passes by reference
+                        // this is retarded
+                        args.next().ok_or(DestructionError::NotEnoughArgs)?
+                        .borrow()
+                        .clone()
+                    );
+                },
+
+                Subspec::Bind(key) => {
+                    ctx.borrow_mut().set(&key, 
+                        // OSPL passes by value by default.
+                        args.next().ok_or(DestructionError::NotEnoughArgs)?
+                        .borrow()
+                        .deep_clone()
+                    );
+                },
+
+                Subspec::Destruct(tree) => Self::destruct_into(
+                    ctx.clone(),
+                    tree,
+                        args.next().ok_or(DestructionError::NotEnoughArgs)?.borrow().clone().into_values()
+                )?,
+
+                Subspec::Literal(v) => {
+                    let arg = args.next().ok_or(DestructionError::NotEnoughArgs)?;
+                    if *arg.borrow() != v {
+                        return Err(DestructionError::LiteralRequirementFailed);
+                    }
+                }
+
                 Subspec::Ignore => {}
             };
         }
 
-        // feel free to turn this off if you want speed
-        if needed_len != actual_len {
-            panic!("fuck");
-        };
+        // make sure we don't have tOO MANY ARGS
+        if args.next().is_some() {
+            return Err(DestructionError::TooManyArgs);
+        }
+
 
         return Ok(());
     }

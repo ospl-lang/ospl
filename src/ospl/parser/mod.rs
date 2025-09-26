@@ -10,6 +10,12 @@ use crate::{ospl::{
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub mod spec;
+pub mod literal;
+pub mod statement;
+pub mod controlflow;
+pub mod preprocess;
+
 pub struct Parser {
     input: String, // owned buffer
     pos: usize,    // current cursor
@@ -168,11 +174,6 @@ syntax or parse error at char {} ({}): {}
     }
 }
 
-pub mod spec;
-pub mod literal;
-pub mod statement;
-pub mod controlflow;
-
 impl Parser {
     /// parses into a `Block` if it finds one
     fn block(&mut self) -> Option<Block> {
@@ -198,6 +199,11 @@ impl Parser {
                     continue;
                 }
                 Some(_) => {
+                    // try to do preprocessor stuff (this handles backtracking for us)
+                    if self.process_preprocessor_directive(&mut stmts) {
+                        continue;
+                    }
+
                     let stmt = self.stmt()?;  // parses the statement
                     stmts.push(stmt);
     
@@ -222,6 +228,12 @@ impl Parser {
                     continue;
                 }
                 Some(_) => {
+                    // try to do preprocessor stuff (this handles backtracking for us)
+                    if self.process_preprocessor_directive(&mut stmts) {
+                        continue;
+                    }
+
+                    // now try a statement
                     if let Some(stmt) = self.stmt() {
                         stmts.push(stmt);
                         self.skip_ws();
@@ -515,7 +527,7 @@ pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     let ast = p.module_root_stmts().expect("invalid or no AST.");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
-    // println!("ast: {:#?}", &ast);
+    println!("ast: {:#?}", &ast);
 
     let _ = Interpreter::block(ctx.clone(), Block(ast));
     /* println!("{:#?}", result);

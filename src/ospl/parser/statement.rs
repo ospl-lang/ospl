@@ -6,7 +6,7 @@ use crate::{
 impl Parser {
     pub fn print(&mut self) -> Option<Statement> {
         self.skip_ws();
-        if !self.match_next("print") {
+        if !self.match_next("print ") {
             return None
         }
 

@@ -17,7 +17,6 @@ pub enum Subspec {
 
 pub mod interpreter;
 pub mod parser;
-pub mod imports;
 
 ///////////////////////////////////////////////////////////////////////////////
 // values and types

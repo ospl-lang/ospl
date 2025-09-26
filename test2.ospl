@@ -1,12 +1,5 @@
-{
-    def o = obj {
-        a: "hi\n"
-        b: "hi2\n"
-        f: fn(?this) {
-            print [@this].b;
-        }
-    };
+def pln = fn(stir) {
+    print stir + "\n"
+};
 
-    o.f();
-    print "a\n";
-}
+pln("hi");

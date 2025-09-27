@@ -51,6 +51,63 @@ impl Interpreter {
         None
     }
 
+    fn property_access(ctx: Rc<RefCell<Context>>, a: Box<Expr>, b: Box<Expr>) -> Rc<RefCell<Value>> {
+        let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
+
+        match &*a_value.borrow() {
+            Value::Tuple(t) => {
+                // set current instance
+                ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
+
+                let idx: usize = b_key.parse::<usize>().expect(">//< non-integer tuple index");
+
+                return t
+                    .get(idx)
+                    .expect(">//< bad tuple index")
+                    .clone()
+            },
+
+            Value::Mixmap { ordered, keyed } => {
+                // set current instance
+                ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
+
+                return if let Ok(idx) = b_key.parse::<usize>() {
+                    // Rc clone
+                    ordered
+                        .get(idx)
+                        .expect(">//< bad mixmap index")
+                        .clone()
+                } else {
+                    // Rc clone
+                    keyed
+                        .get(&b_key)
+                        .expect(">//< bad key")
+                        .clone()
+                }
+            }
+            Value::Object { symbols } => {
+                // set current instance
+                ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
+
+                return symbols
+                    .get(b_key.as_str())
+                    .expect(
+                        &format!(
+                            "failed to retrive key `{}` in object: `{:#?}`",
+                            b_key,
+                            symbols
+                        )
+                    )
+                    .clone()
+            },
+            Value::Module { context } => return context
+                .borrow()
+                .get(&b_key)
+                .expect("expected key or something in the module idfk man WE NEED TO SHIP ALREADY FUCKJKAHDSJKHAKJSHD"),
+            _ => return a_value.clone()  // Already Rc<RefCell<Value>>
+        };
+    }
+
     /// Evaluates an `Expr`
     /// 
     /// # Arguments
@@ -79,58 +136,7 @@ impl Interpreter {
                     .clone() // cheap Rc clone
             }
 
-            Expr::Property(a, b) => {
-                let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
-
-                match &*a_value.borrow() {
-                    Value::Tuple(t) => {
-                        // set current instance
-                        ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
-
-                        let idx: usize = b_key.parse::<usize>().expect(">//< non-integer tuple index");
-
-                        return t
-                            .get(idx)
-                            .expect(">//< bad tuple index")
-                            .clone()
-                    },
-
-                    Value::Mixmap { ordered, keyed } => {
-                        // set current instance
-                        ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
-
-                        return if let Ok(idx) = b_key.parse::<usize>() {
-                            // Rc clone
-                            ordered
-                                .get(idx)
-                                .expect(">//< bad mixmap index")
-                                .clone()
-                        } else {
-                            // Rc clone
-                            keyed
-                                .get(&b_key)
-                                .expect(">//< bad key")
-                                .clone()
-                        }
-                    }
-                    Value::Object { symbols } => {
-                        // set current instance
-                        ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
-
-                        return symbols
-                            .get(b_key.as_str())
-                            .expect(
-                                &format!(
-                                    "failed to retrive key `{}` in object: `{:#?}`",
-                                    b_key,
-                                    symbols
-                                )
-                            )
-                            .clone()
-                    }
-                    _ => return a_value.clone()  // Already Rc<RefCell<Value>>
-                };
-            }
+            Expr::Property(a, b) => Self::property_access(ctx, a, b),
 
             // if it's a function call, we go and handle that
             Expr::FunctionCall { left, args } => {
@@ -141,7 +147,12 @@ impl Interpreter {
                     .collect();
 
                 return Self::do_call(Some(ctx.clone()), function, new_args)
-                    .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
+                    .unwrap_or_else(|| Rc::new(
+                        RefCell::new(
+                            Value::Null
+                        )
+                    )
+                )
             }
 
             // if it's an operation, we do some dispath
@@ -300,6 +311,35 @@ impl Interpreter {
                         }
                     )
                 )
+            },
+
+            Expr::Import(ast) => {
+                // create a new context for this module
+                let newctx =
+                    Rc::new(
+                        RefCell::new(
+                            Context::new(
+                                None
+                            )
+                        )
+                    );
+
+
+                // evaluate all that shit
+                for stmt in ast {
+                    // we don't care about the return here
+                    Self::stmt(newctx.clone(), stmt);
+                };
+
+                // put it into an object
+                let object = Value::Module {
+                    // this line is not efficient! Too bad!
+                    context: newctx
+                };
+
+                return Rc::new(
+                    RefCell::new(object)
+                );
             }
         }
     }

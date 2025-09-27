@@ -1,2 +1,2 @@
-usefile 'test.ospl';
-print foo(1, 2);
+def test = use 'test.ospl';
+print test.foo (2, 2);

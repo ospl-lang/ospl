@@ -177,7 +177,10 @@ impl Interpreter {
             RefCell::new(
                 Context::new(
                     Some(
-                        ctx.upgrade()?.clone()
+                        ctx
+                            .upgrade()
+                            .expect("failed to upgrade `ctx` (does the context exist?)")
+                            .clone()
                     )
                 )
             )

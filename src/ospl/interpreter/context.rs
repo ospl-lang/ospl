@@ -14,7 +14,7 @@ pub struct Context {
     parent: Option<Weak<RefCell<Context>>>,
 
     /// A hashmap of symbols in this context. Self-explainatory
-    vars: HashMap<String, Rc<RefCell<Value>>>,
+    pub vars: HashMap<String, Rc<RefCell<Value>>>,
 
     /// The current instance we're doing
     pub current_instance: Option<Weak<RefCell<Value>>>

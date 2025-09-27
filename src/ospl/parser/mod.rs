@@ -7,7 +7,7 @@ use crate::{ospl::{
     Value
 }, Block, Statement};
 
-use std::cell::RefCell;
+use std::{cell::RefCell, fs::File, io::Read};
 use std::rc::Rc;
 
 pub mod spec;
@@ -251,6 +251,16 @@ impl Parser {
         return Some(stmts)
     }
 
+    const RESERVED_WORDS: &[&str] = &[
+        // reserved words
+        "loop", "obj", "mix", "cls", "return", "if", "else", "select",
+        "check", "case", "destruct", "from", "print", "new",
+        
+        // types
+        "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
+        "half", "single", "float", "str", "ref",
+    ];
+
     /// parse a single identifier
     fn identifier(&mut self) -> Option<String> {
         let mut id: String = String::new();
@@ -267,15 +277,8 @@ impl Parser {
         id.push_str(&self.consume_while(|c| c.is_alphanumeric() || c == '_'));
 
         // ensure it contains nothing reserved
-        if vec![
-            // reserved words
-            "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-            "check", "case", "destruct", "from", "print", "new",
-            
-            // types
-            "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
-            "half", "single", "float", "str", "ref"].contains(&id.as_str())
-        {
+
+        if Self::RESERVED_WORDS.contains(&id.as_str()) {
             // this IS NOT A PARSE ERROR!
             return None
         }
@@ -295,10 +298,43 @@ impl Parser {
 
             if self.match_next(Self::GROUP_CLOSE) { inner }
             else { self.parse_error("invalid grouping expression (expected group closing marker)") }
-        } else if let Some(v) = self.attempt(Self::literal) {
+        }
+        
+        else if let Some(v) = self.attempt(Self::literal) {
             // ==== LITERALS ====
             v
-        } else if let Some(id) = self.attempt(Self::identifier) {
+        }
+        
+        else if self.match_next("use ") {  // use statement
+            self.skip_ws();
+
+            // ugly but who the fuck cares
+            let path = self.raw_string_literal()
+                .expect("expected (raw) string literal for file path")
+                .into_id();
+
+            let mut f = File::open(path)
+                .expect("failed to open file");
+
+            let mut buff = String::new();
+            f.read_to_string(&mut buff)
+                .expect("failed to read file");
+
+            // parse the file
+            let mut new_parser = Self::new();
+            new_parser.feed(&buff);
+
+            let module_root = new_parser.module_root_stmts()
+                .expect("failed to parse module root");
+
+            return Some(
+                Expr::Import(
+                    module_root
+                )
+            );
+        }
+
+        else if let Some(id) = self.attempt(Self::identifier) {
             // ==== VARS ====
             Expr::Variable(
                 Box::new(
@@ -307,7 +343,9 @@ impl Parser {
                     )
                 )
             )
-        } else if self.match_next("new ") {  // class construction
+        }
+        
+        else if self.match_next("new ") {  // class construction
             self.skip_ws();
             let class = self.expr()
                 .unwrap_or_else(|| self.parse_error("invalid class after `new`"));
@@ -317,7 +355,9 @@ impl Parser {
                     class
                 )
             )
-        } else if self.peek_or_consume('@') {  // deref
+        }
+        
+        else if self.peek_or_consume('@') {  // deref
             // whitespace is not allowed
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to deref"));
@@ -325,14 +365,18 @@ impl Parser {
             Expr::Deref(
                 Box::new(expr)
             )
-        } else if self.peek_or_consume('$') { // ref
+        }
+        
+        else if self.peek_or_consume('$') {  // ref
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to ref"));
 
             Expr::Ref(
                 Box::new(expr)
             )
-        } else {
+        }
+        
+        else {
             // WE HAVE NO IDEA WHAT THE LHS IS
             return None;
         };
@@ -527,7 +571,7 @@ pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     let ast = p.module_root_stmts().expect("invalid or no AST.");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
-    println!("ast: {:#?}", &ast);
+    // println!("ast: {:#?}", &ast);
 
     let _ = Interpreter::block(ctx.clone(), Block(ast));
     /* println!("{:#?}", result);

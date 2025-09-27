@@ -16,7 +16,7 @@ impl Parser {
 
     pub fn process_preprocessor_directive(&mut self, ast: &mut Vec<Statement>) -> bool {
         // try usefile
-        if let Some(b) = self.attempt(Self::usefile_directive) {
+        if let Some(b) = self.attempt(Self::includefile_directive) {
             ast.extend(b);
             return true
         }
@@ -24,8 +24,8 @@ impl Parser {
         return false
     }
 
-    pub fn usefile_directive(&mut self) -> Option<Vec<Statement>> {
-        if !self.match_next("usefile ") {
+    pub fn includefile_directive(&mut self) -> Option<Vec<Statement>> {
+        if !self.match_next("includefile ") {
             return None
         }
 

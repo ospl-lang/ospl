@@ -1,2 +1,7 @@
+*****
 def test = use 'test.ospl';
 print test.foo (2, 2);
+*****
+
+def libc = cffi_load 'libc.so.6';
+print libc;

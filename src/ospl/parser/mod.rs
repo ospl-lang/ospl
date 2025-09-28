@@ -16,6 +16,9 @@ pub mod statement;
 pub mod controlflow;
 pub mod preprocess;
 
+#[cfg(feature = "cffi")]
+pub mod cffi;
+
 pub struct Parser {
     input: String, // owned buffer
     pos: usize,    // current cursor
@@ -258,7 +261,7 @@ impl Parser {
         
         // types
         "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
-        "half", "single", "float", "str", "ref",
+        "half", "single", "float", "str", "ref", "cffi_load"
     ];
 
     /// parse a single identifier
@@ -289,22 +292,25 @@ impl Parser {
     const GROUP_OPEN: &str = "[";
     const GROUP_CLOSE: &str = "]";
     pub fn prefix_expr(&mut self) -> Option<Expr> {
-        // ==== DO THE LHS ====
-        let lhs = if self.match_next(Self::GROUP_OPEN) {
-            // ==== GROUPING ====
+        // ==== GROUPING ====
+        if self.match_next(Self::GROUP_OPEN) {
             self.skip_ws();
             let inner = self.expr()?;                       // parse inside group
             self.skip_ws();
 
-            if self.match_next(Self::GROUP_CLOSE) { inner }
-            else { self.parse_error("invalid grouping expression (expected group closing marker)") }
+            if self.match_next(Self::GROUP_CLOSE) {
+                return Some(inner)
+            } else {
+                self.parse_error("invalid grouping expression (expected group closing marker)")
+            }
         }
         
+        // ==== LITERALS ====
         else if let Some(v) = self.attempt(Self::literal) {
-            // ==== LITERALS ====
-            v
+            return Some(v)
         }
         
+        // ==== IMPORTS ====
         else if self.match_next("use ") {  // use statement
             self.skip_ws();
 
@@ -334,12 +340,23 @@ impl Parser {
             );
         }
 
-        else if let Some(id) = self.attempt(Self::identifier) {
-            // ==== VARS ====
-            Expr::Variable(
-                Box::new(
-                    Expr::Literal(
-                        Value::String(id)
+        // ==== CFFI LOAD ====
+        // using cfg!() here is a little slow and quite wasteful, I don't
+        // particularly care at the moment though
+        // TODO: swap cfg!(...) for #[cfg(...)]
+        #[cfg(feature = "cffi")]
+        if let Some(cffi) = self.attempt(Self::cffi_load) {
+            return Some(cffi)
+        }
+
+        // ==== VARS ====
+        if let Some(id) = self.attempt(Self::identifier) {
+            return Some(
+                Expr::Variable(
+                    Box::new(
+                        Expr::Literal(
+                            Value::String(id)
+                        )
                     )
                 )
             )
@@ -350,9 +367,11 @@ impl Parser {
             let class = self.expr()
                 .unwrap_or_else(|| self.parse_error("invalid class after `new`"));
 
-            Expr::Construct(
-                Box::new(
-                    class
+            return Some(
+                    Expr::Construct(
+                        Box::new(
+                            class
+                    )
                 )
             )
         }
@@ -362,8 +381,10 @@ impl Parser {
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to deref"));
 
-            Expr::Deref(
-                Box::new(expr)
+            return Some(
+                Expr::Deref(
+                    Box::new(expr)
+                )
             )
         }
         
@@ -371,8 +392,10 @@ impl Parser {
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to ref"));
 
-            Expr::Ref(
-                Box::new(expr)
+            return Some(
+                Expr::Ref(
+                    Box::new(expr)
+                )
             )
         }
         
@@ -380,8 +403,6 @@ impl Parser {
             // WE HAVE NO IDEA WHAT THE LHS IS
             return None;
         };
-
-        return Some(lhs)
     }
 
     const PROP_ACCESS_CHAR: char = '.';

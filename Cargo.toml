@@ -7,3 +7,11 @@ description = "the (UNFINISHED!!!) OSPL programming language"
 authors = ["Oscar Langlois <ocyalt4@gmail,com>", "Colton Wollinger <cwoll1home@gmail.com>"]
 homepage = "https://ospl-lang.github.io"
 readme = "README.md"
+
+[features]
+default = []
+cffi = ["libffi", "libloading"]
+
+[dependencies]
+libffi = { version = "4.1.2", optional = true, features = ["system"] }
+libloading = { version = "0.8", optional = true }

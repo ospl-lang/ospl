@@ -18,9 +18,34 @@ pub enum Subspec {
 pub mod interpreter;
 pub mod parser;
 
+#[cfg(feature = "cffi")]
+pub mod cffi;
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // values and types
 ///////////////////////////////////////////////////////////////////////////////
+
+pub enum TypeAnnotation {
+    Ref, Null, Void,
+    Byte, SignedByte,
+    Word, SignedWord,
+    DoubleWord, SignedDoubleWord,
+    QuadrupleWord, SignedQuadrupleWord,
+    Half, Single, Float,
+
+    Bool, String,
+
+    Tuple, Mixmap, Object, Class,
+    MacroFn, RealFn,
+    Module,
+
+    #[cfg(feature = "cffi")]
+    CffiFunction,
+
+    #[cfg(feature = "cffi")]
+    CffiLibrary
+}
 
 /// Represents a value in OSPL
 #[derive(Debug, Clone)]
@@ -77,7 +102,17 @@ pub enum Value {
     Module {
         // THIS IS REALLY RETARDED BUT I DON'T GIVE A FUCK
         context: Rc<RefCell<Context>>
-    }
+    },
+
+    // CFFI STUFF
+    #[cfg(feature = "cffi")]
+    CffiFunction {
+        func_ptr: *const (),
+        lib: Rc<cffi::CffiLib>
+    },
+
+    #[cfg(feature = "cffi")]
+    CffiLibrary(Rc<cffi::CffiLib>)
 }
 
 impl Value {
@@ -293,7 +328,14 @@ pub enum Expr {
         spec: Vec<Subspec>,
         body: Block,
     },
-    Import(Vec<Statement>)
+    Import(Vec<Statement>),
+
+    // cffi stuff
+    #[cfg(feature = "cffi")]
+    CffiLoad(String),
+
+    #[cfg(feature = "cffi")]
+    CffiCall(Value, Vec<Expr>)
 }
 
 impl Expr {

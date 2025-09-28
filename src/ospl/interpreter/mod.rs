@@ -18,7 +18,7 @@ pub struct Interpreter;
 
 pub mod function;
 pub mod controlflow;
-pub mod object;
+pub mod object; 
 
 impl Interpreter {
     fn solve_for_avbk(
@@ -340,6 +340,38 @@ impl Interpreter {
                 return Rc::new(
                     RefCell::new(object)
                 );
+            }
+
+            #[cfg(feature = "cffi")]
+            Expr::CffiLoad(libname) => {
+                return Rc::new(
+                    RefCell::new(
+                        Value::CffiLibrary(
+                            Rc::new(
+                                cffi::CffiLib::new(
+                                    &libname
+                                ).expect("failed to load library")
+                            )
+                        )
+                    )
+                )
+            },
+
+            #[cfg(feature = "cffi")]
+            Expr::CffiCall(f, args) => {
+                // consturct new argument list
+                let mut args_values: Vec<Value> = Vec::new();
+                for arg in args {
+                    let value = Self::expr(ctx.clone(), arg);
+                    args_values.push(*value.borrow());
+                }
+
+                let mut c_args = 
+                return Rc::new(
+                    RefCell::new(
+                        
+                    )
+                )
             }
         }
     }

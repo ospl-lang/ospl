@@ -17,6 +17,7 @@ pub enum Subspec {
 
 pub mod interpreter;
 pub mod parser;
+pub mod ffi;
 
 ///////////////////////////////////////////////////////////////////////////////
 // values and types
@@ -77,6 +78,12 @@ pub enum Value {
     Module {
         // THIS IS REALLY RETARDED BUT I DON'T GIVE A FUCK
         context: Rc<RefCell<Context>>
+    },
+    ForeignFn {
+        library: String,
+        symbol: String,
+        arg_types: Vec<String>,
+        return_type: String,
     }
 }
 
@@ -254,6 +261,10 @@ pub enum Statement {
         cases: Vec<(Vec<Subspec>, Block)>,
     },
     Loop(Box<Block>),
+    ImportLib {
+        name: String,
+        path: String,
+    },
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -293,7 +304,13 @@ pub enum Expr {
         spec: Vec<Subspec>,
         body: Block,
     },
-    Import(Vec<Statement>)
+    Import(Vec<Statement>),
+    ForeignFunctionLiteral {
+        library: String,
+        symbol: String,
+        arg_types: Vec<String>,
+        return_type: String,
+    }
 }
 
 impl Expr {

@@ -37,3 +37,18 @@ select result {
         print "result isn't 6\n";
     }
 };
+
+# FFI demo: load shared library and call foreign functions
+import 'mathffi' './libmathffi.so';
+
+def cos_fn = foreign 'mathffi' 'cosine'(f64) -> f64;
+def add_fn = foreign 'mathffi' 'add_ints'(i32, i32) -> i32;
+
+print "cos(0.0) from ffi: " + cos_fn(0.0f) + "\n";
+print "ffi add 7 + 5 = " + add_fn(7d, 5d) + "\n";
+
+# FFI demo: load shared library and call its functions
+import 'example' './libexample.so';
+
+def add_two = foreign 'example' 'add_numbers'(i32, i32) -> i32;
+print "add_numbers(3, 4) via ffi => " + add_two(3d, 4d) + "\n";

@@ -254,8 +254,8 @@ impl Parser {
     const RESERVED_WORDS: &[&str] = &[
         // reserved words
         "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-        "check", "case", "destruct", "from", "print", "new", "fn",
-        
+        "check", "case", "destruct", "from", "print", "new", "fn", "import",
+
         // types
         "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
         "half", "single", "float", "str", "ref",
@@ -392,6 +392,64 @@ impl Parser {
         // ==== POSTFIX OPS ====
         loop {
             self.skip_ws();
+
+            // foreign function literal
+            if self.match_next("foreign ") {
+                self.skip_ws();
+
+                let lib = self.raw_string_literal()
+                    .unwrap_or_else(|| self.parse_error("expected library name"))
+                    .into_id();
+
+                self.skip_ws();
+
+                let symbol = self.raw_string_literal()
+                    .unwrap_or_else(|| self.parse_error("expected symbol name"))
+                    .into_id();
+
+                self.skip_ws();
+
+                self.expect_char('(')
+                    .unwrap_or_else(|| self.parse_error("expected '('"));
+
+                let mut arg_types = Vec::new();
+                loop {
+                    self.skip_ws();
+                    if self.peek_or_consume(')') {
+                        break;
+                    }
+
+                    let arg = self.identifier()
+                        .unwrap_or_else(|| self.parse_error("expected arg type"));
+                    arg_types.push(arg);
+
+                    self.skip_ws();
+                    if self.peek_or_consume(',') {
+                        continue;
+                    } else if self.peek_or_consume(')') {
+                        break;
+                    } else {
+                        self.parse_error("expected ',' or ')'");
+                    }
+                }
+
+                self.skip_ws();
+                self.match_next("-> ")
+                    .then_some(())
+                    .unwrap_or_else(|| self.parse_error("expected '->'"));
+
+                self.skip_ws();
+                let return_type = self.identifier()
+                    .unwrap_or_else(|| self.parse_error("expected return type"));
+
+                lhs = Expr::ForeignFunctionLiteral {
+                    library: lib,
+                    symbol,
+                    arg_types,
+                    return_type,
+                };
+                continue;
+            }
 
             // ==== ALL THE CODE THAT FOLLOWS WAS WRITTEN BY AN LLM ===
             // ...thanks Kevin, and Colton...

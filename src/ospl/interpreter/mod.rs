@@ -146,6 +146,28 @@ impl Interpreter {
                     .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
+                match &*function.borrow() {
+                    Value::ForeignFn { library, symbol, .. } => {
+                        let mut args_clone = Vec::new();
+                        for arg in &new_args {
+                            let values = arg.borrow().clone().into_values();
+                            for v in values {
+                                args_clone.push(v.borrow().clone());
+                            }
+                        }
+
+                        let mut ctx_mut = ctx.borrow_mut();
+                        let result = crate::ospl::ffi::call_foreign_function(
+                            &mut ctx_mut.ffi_registry,
+                            library,
+                            symbol,
+                            &args_clone,
+                        ).expect("foreign function call failed");
+                        return Rc::new(RefCell::new(result));
+                    }
+                    _ => {}
+                }
+
                 return Self::do_call(Some(ctx.clone()), function, new_args)
                     .unwrap_or_else(|| Rc::new(
                         RefCell::new(
@@ -340,6 +362,30 @@ impl Interpreter {
                 return Rc::new(
                     RefCell::new(object)
                 );
+            },
+
+            Expr::ForeignFunctionLiteral { library, symbol, arg_types, return_type } => {
+                let mut ctx_mut = ctx.borrow_mut();
+                let registry = &mut ctx_mut.ffi_registry;
+
+                if !registry.has_library(&library) {
+                    panic!("library '{}' not loaded; use import to load it", library);
+                }
+
+                registry.register_function(
+                    library.clone(),
+                    symbol.clone(),
+                    symbol.clone(),
+                    arg_types.clone(),
+                    return_type.clone(),
+                ).expect("foreign function registration failed");
+
+                return Rc::new(RefCell::new(Value::ForeignFn {
+                    library,
+                    symbol,
+                    arg_types,
+                    return_type,
+                }));
             }
         }
     }
@@ -444,6 +490,14 @@ impl Interpreter {
                     ),
                     _ => panic!("I don't know how the hell to delete that")
                 };
+                return StatementControl::Default;
+            },
+
+            Statement::ImportLib { name, path } => {
+                match ctx.borrow_mut().ffi_registry.load_library(name.clone(), &path) {
+                    Ok(_) => {},
+                    Err(e) => panic!("Failed to load library: {}", e),
+                }
                 return StatementControl::Default;
             }
         }

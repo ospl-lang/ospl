@@ -1,3 +1,13 @@
+*****
+this 
+is
+a
+multiline
+comment
+*****
+
+# this is a single line comment
+
 def add = fn((a, b), c) {
     def z = a + b + c;
     return z;

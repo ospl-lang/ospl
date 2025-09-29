@@ -14,7 +14,19 @@
     { "include": "#punctuation" }
   ],
   "repository": {
-    "comments": { "patterns": [] },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.ospl",
+          "begin": "\\*\\*\\*\\*\\*",
+          "end": "\\*\\*\\*\\*\\*"
+        },
+        {
+          "name": "comment.line.ospl",
+          "match": "#.*$"
+        }
+      ]
+    },
     "strings": {
       "patterns": [
         {

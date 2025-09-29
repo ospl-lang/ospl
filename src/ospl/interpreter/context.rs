@@ -33,10 +33,10 @@ impl Context {
         if let Some(v) = self.vars.get(key) {
             // just a mental note: THIS CLONES AN RC
             // IT DOESN'T CLONE THE VALUE, IT JUST INCREMENTS THE REF COUNT
-            Some(v.clone())
+            return Some(v.clone())
         } else {
             // recurse deeply like I did to your mother
-            self.parent.as_ref()?.upgrade()?.borrow().get(key)
+            return self.parent.as_ref()?.upgrade()?.borrow().get(key)
         }
     }
 

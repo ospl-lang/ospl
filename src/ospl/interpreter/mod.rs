@@ -85,7 +85,7 @@ impl Interpreter {
                         .clone()
                 }
             }
-            Value::Object { symbols } => {
+            Value::Object { symbols } | Value::Class { symbols, .. } => {
                 // set current instance
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 

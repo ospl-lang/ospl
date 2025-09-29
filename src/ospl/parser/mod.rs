@@ -254,7 +254,7 @@ impl Parser {
     const RESERVED_WORDS: &[&str] = &[
         // reserved words
         "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-        "check", "case", "destruct", "from", "print", "new",
+        "check", "case", "destruct", "from", "print", "new", "fn",
         
         // types
         "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",

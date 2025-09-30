@@ -7,3 +7,7 @@ description = "the (UNFINISHED!!!) OSPL programming language"
 authors = ["Oscar Langlois <ocyalt4@gmail,com>", "Colton Wollinger <cwoll1home@gmail.com>"]
 homepage = "https://ospl-lang.github.io"
 readme = "README.md"
+
+[dependencies]
+libloading = "0.8"
+libffi = "4.1"

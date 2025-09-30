@@ -3,6 +3,7 @@ use super::*;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use crate::ospl::ffi::FfiRegistry;
 
 /// Context in which an AST is executed.
 #[derive(Debug, Clone)]
@@ -17,15 +18,24 @@ pub struct Context {
     pub vars: HashMap<String, Rc<RefCell<Value>>>,
 
     /// The current instance we're doing
-    pub current_instance: Option<Weak<RefCell<Value>>>
+    pub current_instance: Option<Weak<RefCell<Value>>>,
+
+    /// Registry for FFI functions
+    pub ffi_registry: FfiRegistry,
 }
 
 impl Context {
     pub fn new(parent: Option<Rc<RefCell<Context>>>) -> Self {
+        let ffi_registry = parent
+            .as_ref()
+            .map(|p| p.borrow().ffi_registry.clone())
+            .unwrap_or_else(FfiRegistry::new);
+
         Self {
             vars: HashMap::new(),
             parent: parent.as_ref().map(|p| Rc::downgrade(p)),
-            current_instance: None
+            current_instance: None,
+            ffi_registry,
         }
     }
 

@@ -1,0 +1,60 @@
+{
+  "name": "ospl-vscode",
+  "displayName": "OSPL",
+  "description": "Syntax highlighting and language basics for the OSPL programming language",
+  "version": "0.0.1",
+  "publisher": "ospl-lang",
+  "private": true,
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ospl",
+        "aliases": [
+          "OSPL",
+          "ospl"
+        ],
+        "extensions": [
+          ".ospl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ospl",
+        "scopeName": "source.ospl",
+        "path": "./syntaxes/ospl.tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "OSPL Default",
+        "uiTheme": "vs-dark",
+        "path": "./themes/ospl-default.json"
+      }
+    ]
+  },
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ospl-lang/ospl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ospl-lang/ospl/issues"
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2.15.0"
+  },
+  "keywords": [],
+  "author": "",
+  "homepage": "https://github.com/ospl-lang/ospl#readme"
+}

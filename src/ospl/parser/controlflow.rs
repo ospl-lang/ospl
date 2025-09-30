@@ -33,7 +33,10 @@ impl Parser {
         loop {
             self.skip_ws();
             match self.peek() {
-                Some('}') => break,
+                Some('}') => {
+                    self.pos += 1;  // consume closing brace
+                    break;
+                },
                 Some(_) => {
                     cases.push(
                         self.parse_case()

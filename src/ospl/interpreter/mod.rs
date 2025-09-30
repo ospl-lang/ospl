@@ -104,6 +104,20 @@ impl Interpreter {
                 .borrow()
                 .get(&b_key)
                 .expect("expected key or something in the module idfk man WE NEED TO SHIP ALREADY FUCKJKAHDSJKHAKJSHD"),
+            Value::ForeignLib { library } => {
+                return Rc::new(RefCell::new(Value::ForeignSymbol {
+                    library: library.clone(),
+                    symbol: b_key,
+                }));
+            }
+            Value::ForeignSymbol { library, symbol } => {
+                // allow chained property access: treat as namespace under symbol
+                let combined = format!("{}::{}", symbol, b_key);
+                return Rc::new(RefCell::new(Value::ForeignSymbol {
+                    library: library.clone(),
+                    symbol: combined,
+                }));
+            }
             _ => return a_value.clone()  // Already Rc<RefCell<Value>>
         };
     }
@@ -370,6 +384,45 @@ impl Interpreter {
 
                 if !registry.has_library(&library) {
                     panic!("library '{}' not loaded; use import to load it", library);
+                }
+
+                registry.register_function(
+                    library.clone(),
+                    symbol.clone(),
+                    symbol.clone(),
+                    arg_types.clone(),
+                    return_type.clone(),
+                ).expect("foreign function registration failed");
+
+                return Rc::new(RefCell::new(Value::ForeignFn {
+                    library,
+                    symbol,
+                    arg_types,
+                    return_type,
+                }));
+            },
+
+            Expr::CffiLoad { path } => {
+                let mut ctx_mut = ctx.borrow_mut();
+                ctx_mut.ffi_registry.load_library(path.clone(), &path)
+                    .unwrap_or_else(|e| panic!("Failed to load library '{}': {}", path, e));
+
+                return Rc::new(RefCell::new(Value::ForeignLib { library: path }));
+            },
+
+            Expr::CffiFn { target, arg_types, return_type } => {
+                let target_value = Self::expr(ctx.clone(), *target);
+                let (library, symbol) = match &*target_value.borrow() {
+                    Value::ForeignSymbol { library, symbol } => (library.clone(), symbol.clone()),
+                    Value::ForeignFn { library, symbol, .. } => (library.clone(), symbol.clone()),
+                    _ => panic!("CFFI_Fn target must be a foreign symbol"),
+                };
+
+                let mut ctx_mut = ctx.borrow_mut();
+                let registry = &mut ctx_mut.ffi_registry;
+
+                if !registry.has_library(&library) {
+                    panic!("library '{}' not loaded; use CFFI_Load first", library);
                 }
 
                 registry.register_function(

@@ -254,7 +254,7 @@ impl Parser {
     const RESERVED_WORDS: &[&str] = &[
         // reserved words
         "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-        "check", "case", "destruct", "from", "print", "new", "fn", "import",
+        "check", "case", "destruct", "from", "print", "new", "fn", "foreign", "import",
 
         // types
         "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
@@ -290,7 +290,58 @@ impl Parser {
     const GROUP_CLOSE: &str = "]";
     pub fn prefix_expr(&mut self) -> Option<Expr> {
         // ==== DO THE LHS ====
-        let lhs = if self.match_next(Self::GROUP_OPEN) {
+        let lhs = if self.match_next("?!CFFI_Load ") {
+            self.skip_ws();
+            let path = self.raw_string_literal()
+                .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"))
+                .into_id();
+            Expr::CffiLoad { path }
+        }
+
+        else if self.match_next("?!CFFI_Fn ") {
+            self.skip_ws();
+            let target_expr = self.parse_cffi_target();
+
+            self.skip_ws();
+            self.expect_char('(')
+                .unwrap_or_else(|| self.parse_error("expected '(' before argument type list"));
+
+            let mut arg_types = Vec::new();
+            loop {
+                self.skip_ws();
+                if self.peek_or_consume(')') { break; }
+
+                let ty = self.identifier()
+                    .unwrap_or_else(|| self.parse_error("expected argument type identifier"));
+                arg_types.push(ty);
+
+                self.skip_ws();
+                if self.peek_or_consume(',') {
+                    continue;
+                } else if self.peek_or_consume(')') {
+                    break;
+                } else {
+                    self.parse_error("expected ',' or ')' in argument type list");
+                }
+            }
+
+            self.skip_ws();
+            self.match_next("-> ")
+                .then_some(())
+                .unwrap_or_else(|| self.parse_error("expected '->' before return type"));
+
+            self.skip_ws();
+            let return_type = self.identifier()
+                .unwrap_or_else(|| self.parse_error("expected return type identifier"));
+
+            Expr::CffiFn {
+                target: Box::new(target_expr),
+                arg_types,
+                return_type,
+            }
+        }
+
+        else if self.match_next(Self::GROUP_OPEN) {
             // ==== GROUPING ====
             self.skip_ws();
             let inner = self.expr()?;                       // parse inside group
@@ -332,6 +383,62 @@ impl Parser {
                     module_root
                 )
             );
+        }
+
+        else if self.match_next("foreign ") {
+            self.skip_ws();
+
+            let lib = self.raw_string_literal()
+                .unwrap_or_else(|| self.parse_error("expected library name"))
+                .into_id();
+
+            self.skip_ws();
+
+            let symbol = self.raw_string_literal()
+                .unwrap_or_else(|| self.parse_error("expected symbol name"))
+                .into_id();
+
+            self.skip_ws();
+
+            self.expect_char('(')
+                .unwrap_or_else(|| self.parse_error("expected '('"));
+
+            let mut arg_types = Vec::new();
+            loop {
+                self.skip_ws();
+                if self.peek_or_consume(')') {
+                    break;
+                }
+
+                let arg = self.identifier()
+                    .unwrap_or_else(|| self.parse_error("expected arg type"));
+                arg_types.push(arg);
+
+                self.skip_ws();
+                if self.peek_or_consume(',') {
+                    continue;
+                } else if self.peek_or_consume(')') {
+                    break;
+                } else {
+                    self.parse_error("expected ',' or ')'" );
+                }
+            }
+
+            self.skip_ws();
+            self.match_next("-> ")
+                .then_some(())
+                .unwrap_or_else(|| self.parse_error("expected '->'"));
+
+            self.skip_ws();
+            let return_type = self.identifier()
+                .unwrap_or_else(|| self.parse_error("expected return type"));
+
+            Expr::ForeignFunctionLiteral {
+                library: lib,
+                symbol,
+                arg_types,
+                return_type,
+            }
         }
 
         else if let Some(id) = self.attempt(Self::identifier) {
@@ -393,35 +500,35 @@ impl Parser {
         loop {
             self.skip_ws();
 
-            // foreign function literal
-            if self.match_next("foreign ") {
+            // CFFI load literal
+            if self.match_next("?!CFFI_Load ") {
+                self.skip_ws();
+                let path_literal = self.raw_string_literal()
+                    .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"));
+                let path = path_literal.into_id();
+                lhs = Expr::CffiLoad { path };
+                continue;
+            }
+
+            // CFFI function binding
+            if self.match_next("?!CFFI_Fn ") {
                 self.skip_ws();
 
-                let lib = self.raw_string_literal()
-                    .unwrap_or_else(|| self.parse_error("expected library name"))
-                    .into_id();
+                let target_expr = self.expr()
+                    .unwrap_or_else(|| self.parse_error("expected expression after ?!CFFI_Fn"));
 
                 self.skip_ws();
-
-                let symbol = self.raw_string_literal()
-                    .unwrap_or_else(|| self.parse_error("expected symbol name"))
-                    .into_id();
-
-                self.skip_ws();
-
                 self.expect_char('(')
-                    .unwrap_or_else(|| self.parse_error("expected '('"));
+                    .unwrap_or_else(|| self.parse_error("expected '(' before argument type list"));
 
                 let mut arg_types = Vec::new();
                 loop {
                     self.skip_ws();
-                    if self.peek_or_consume(')') {
-                        break;
-                    }
+                    if self.peek_or_consume(')') { break; }
 
-                    let arg = self.identifier()
-                        .unwrap_or_else(|| self.parse_error("expected arg type"));
-                    arg_types.push(arg);
+                    let ty = self.identifier()
+                        .unwrap_or_else(|| self.parse_error("expected argument type identifier"));
+                    arg_types.push(ty);
 
                     self.skip_ws();
                     if self.peek_or_consume(',') {
@@ -429,31 +536,26 @@ impl Parser {
                     } else if self.peek_or_consume(')') {
                         break;
                     } else {
-                        self.parse_error("expected ',' or ')'");
+                        self.parse_error("expected ',' or ')' in argument type list");
                     }
                 }
 
                 self.skip_ws();
                 self.match_next("-> ")
                     .then_some(())
-                    .unwrap_or_else(|| self.parse_error("expected '->'"));
+                    .unwrap_or_else(|| self.parse_error("expected '->' before return type"));
 
                 self.skip_ws();
                 let return_type = self.identifier()
-                    .unwrap_or_else(|| self.parse_error("expected return type"));
+                    .unwrap_or_else(|| self.parse_error("expected return type identifier"));
 
-                lhs = Expr::ForeignFunctionLiteral {
-                    library: lib,
-                    symbol,
+                lhs = Expr::CffiFn {
+                    target: Box::new(target_expr),
                     arg_types,
                     return_type,
                 };
                 continue;
             }
-
-            // ==== ALL THE CODE THAT FOLLOWS WAS WRITTEN BY AN LLM ===
-            // ...thanks Kevin, and Colton...
-            // the comments were mostly written by humans though.
 
             // property access
             if self.peek_or_consume(Self::PROP_ACCESS_CHAR) {
@@ -527,6 +629,45 @@ impl Parser {
         Some(lhs)
     }
 
+    fn parse_cffi_target(&mut self) -> Expr {
+        self.skip_ws();
+
+        let base_id = self.identifier()
+            .unwrap_or_else(|| self.parse_error("expected identifier for CFFI target"));
+
+        let mut expr = Expr::Variable(Expr::litstr(&base_id));
+
+        loop {
+            self.skip_ws();
+
+            if self.peek_or_consume(Self::PROP_ACCESS_CHAR) {
+                self.skip_ws();
+                let ident = self.identifier()
+                    .unwrap_or_else(|| self.parse_error("expected identifier after '.' in CFFI target"));
+                expr = Expr::Property(
+                    Box::new(expr),
+                    Expr::litstr(&ident),
+                );
+                continue;
+            }
+
+            if self.peek_or_consume(Self::PROP_DYN_ACCESS_CHAR) {
+                self.skip_ws();
+                let ident_expr = self.expr()
+                    .unwrap_or_else(|| self.parse_error("expected expression after ':' in CFFI target"));
+                expr = Expr::Property(
+                    Box::new(expr),
+                    Box::new(ident_expr),
+                );
+                continue;
+            }
+
+            break;
+        }
+
+        expr
+    }
+
     pub fn stmt(&mut self) -> Option<Statement> {
         self.skip_ws();
         
@@ -577,6 +718,11 @@ impl Parser {
 
         // ==== LOOPS ====
         else if let Some(s) = self.attempt(Self::parse_loop) {
+            return Some(s)
+        }
+
+        // ==== IMPORT LIBRARY ====
+        else if let Some(s) = self.attempt(Self::import_lib) {
             return Some(s)
         }
 

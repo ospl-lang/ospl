@@ -38,17 +38,20 @@ select result {
     }
 };
 
-# FFI demo: load shared library and call foreign functions
-import 'mathffi' './libmathffi.so';
-
-def cos_fn = foreign 'mathffi' 'cosine'(f64) -> f64;
-def add_fn = foreign 'mathffi' 'add_ints'(i32, i32) -> i32;
-
-print "cos(0.0) from ffi: " + cos_fn(0.0f) + "\n";
-print "ffi add 7 + 5 = " + add_fn(7d, 5d) + "\n";
-
-# FFI demo: load shared library and call its functions
+# FFI: demonstrate both traditional and CFFI syntax
 import 'example' './libexample.so';
-
 def add_two = foreign 'example' 'add_numbers'(i32, i32) -> i32;
-print "add_numbers(3, 4) via ffi => " + add_two(3d, 4d) + "\n";
+def cos_fn = foreign 'example' 'cosine'(f64) -> f64;
+
+# Using explicit 'd' suffix for u32 literals in FFI calls
+print "add_numbers(3, 4) via ffi => ";
+print add_two(3d, 4d);
+print "\n";
+print "cos(0.0) from ffi: ";
+print cos_fn(0.0f);
+print "\n";
+
+# CFFI convenience syntax
+def example_lib = ?!CFFI_Load './libexample.so';
+def cffi_add = ?!CFFI_Fn example_lib.add_numbers (i32, i32) -> i32;
+def cffi_cos = ?!CFFI_Fn example_lib.cosine (f64) -> f64;

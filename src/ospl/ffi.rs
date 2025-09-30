@@ -228,17 +228,21 @@ impl<T: 'static> RawValueHolder for TypedHolder<T> {
 }
 
 fn box_value(value: Value, ty: &str) -> Result<Box<dyn RawValueHolder>, String> {
-    match (value, ty) {
-        (Value::Byte(v), "bool" | "u8") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::SignedByte(v), "i8") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::Word(v), "u16") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::SignedWord(v), "i16") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::DoubleWord(v), "u32") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::SignedDoubleWord(v), "i32") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::QuadrupleWord(v), "u64" | "ptr" | "pointer") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::SignedQuadrupleWord(v), "i64") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::Single(v), "f32") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        (Value::Float(v), "f64") => Ok(Box::new(TypedHolder { value: Box::new(v) })),
-        _ => Err(format!("unsupported argument type: {}", ty)),
+    match (&value, ty) {
+        (Value::Byte(v), "bool" | "u8") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::SignedByte(v), "i8") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::Word(v), "u16") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::SignedWord(v), "i16") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::DoubleWord(v), "u32") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::DoubleWord(v), "i32") => Ok(Box::new(TypedHolder { value: Box::new(*v as i32) })),
+        (Value::SignedDoubleWord(v), "i32") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::SignedDoubleWord(v), "u32") => Ok(Box::new(TypedHolder { value: Box::new(*v as u32) })),
+        (Value::QuadrupleWord(v), "u64" | "ptr" | "pointer") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::QuadrupleWord(v), "i64") => Ok(Box::new(TypedHolder { value: Box::new(*v as i64) })),
+        (Value::SignedQuadrupleWord(v), "i64") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::SignedQuadrupleWord(v), "u64" | "ptr" | "pointer") => Ok(Box::new(TypedHolder { value: Box::new(*v as u64) })),
+        (Value::Single(v), "f32") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        (Value::Float(v), "f64") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+        _ => Err(format!("unsupported argument type: {} for value {:?}", ty, value)),
     }
 }

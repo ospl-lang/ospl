@@ -3,3 +3,6 @@ scrap.rs
 test*.ospl
 *.lock
 .specstory/
+*.so
+*.o
+*.a

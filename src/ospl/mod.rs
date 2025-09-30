@@ -84,6 +84,13 @@ pub enum Value {
         symbol: String,
         arg_types: Vec<String>,
         return_type: String,
+    },
+    ForeignLib {
+        library: String,
+    },
+    ForeignSymbol {
+        library: String,
+        symbol: String,
     }
 }
 
@@ -205,6 +212,19 @@ impl Value {
             Value::Half(w) => Value::Half(*w),
             Value::Single(w) => Value::Single(*w),
             Value::Float(w) => Value::Float(*w),
+            Value::ForeignFn { library, symbol, arg_types, return_type } => Value::ForeignFn {
+                library: library.clone(),
+                symbol: symbol.clone(),
+                arg_types: arg_types.clone(),
+                return_type: return_type.clone(),
+            },
+            Value::ForeignLib { library } => Value::ForeignLib {
+                library: library.clone(),
+            },
+            Value::ForeignSymbol { library, symbol } => Value::ForeignSymbol {
+                library: library.clone(),
+                symbol: symbol.clone(),
+            },
 
             // error
             other @ _ => unimplemented!("Deep clone not implemented for: {:?}", other),
@@ -308,6 +328,14 @@ pub enum Expr {
     ForeignFunctionLiteral {
         library: String,
         symbol: String,
+        arg_types: Vec<String>,
+        return_type: String,
+    },
+    CffiLoad {
+        path: String,
+    },
+    CffiFn {
+        target: Box<Expr>,
         arg_types: Vec<String>,
         return_type: String,
     }

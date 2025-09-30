@@ -163,4 +163,21 @@ impl Parser {
         self.parse_error("invalid else clause");
     }
 
+    pub fn import_lib(&mut self) -> Option<Statement> {
+        if !self.match_next("import ") {
+            return None;
+        }
+
+        self.skip_ws();
+        let lib_name_value = self.raw_string_literal()
+            .unwrap_or_else(|| self.parse_error("expected library name as raw string"));
+        let lib_name = lib_name_value.into_id();
+
+        self.skip_ws();
+        let lib_path_value = self.raw_string_literal()
+            .unwrap_or_else(|| self.parse_error("expected library path as raw string"));
+        let lib_path = lib_path_value.into_id();
+
+        Some(Statement::ImportLib { name: lib_name, path: lib_path })
+    }
 }

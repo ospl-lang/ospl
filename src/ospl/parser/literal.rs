@@ -59,7 +59,7 @@ impl Parser {
     pub fn number_literal_fraction(&mut self) -> Option<Value> {
         // consume the whole part
         let numstr: String = self.consume_while(|c| c.is_ascii_digit() || c == '.');
-        if numstr.is_empty() { return None; }
+        if numstr.is_empty() || !numstr.contains('.') { return None; }
 
         if let Some(postfix) = self.peek() {
             return match postfix {
@@ -442,13 +442,13 @@ impl Parser {
     const TRUE_KW: &str = "true";
     const FALSE_KW: &str = "false";
     pub fn literal(&mut self) -> Option<Expr> {
-        if let Some(num) = self.attempt(Self::number_literal_whole) {
+        if let Some(num) = self.attempt(Self::number_literal_fraction) {
             return Some(
                 Expr::Literal(num)
             );
         }
 
-        else if let Some(num) = self.attempt(Self::number_literal_fraction) {
+        else if let Some(num) = self.attempt(Self::number_literal_whole) {
             return Some(
                 Expr::Literal(num)
             );

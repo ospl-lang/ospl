@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::c_void, rc::Rc};
+use std::{collections::HashMap, ffi::{c_void, CString}, rc::Rc};
 
 use libffi::middle::{arg, Arg, CodePtr, Cif, Type};
 use libloading::Library;
@@ -126,7 +126,8 @@ fn map_type(name: &str) -> Result<Type, &'static str> {
         "i64" => Ok(Type::i64()),
         "f32" => Ok(Type::f32()),
         "f64" => Ok(Type::f64()),
-        "ptr" | "pointer" => Ok(Type::pointer()),
+        "usize" => Ok(Type::usize()),
+        "ptr" | "pointer" | "cstr" => Ok(Type::pointer()),
         _ => Err("unsupported type"),
     }
 }
@@ -204,7 +205,7 @@ pub fn call_foreign_function(
                 let result = function.cif.call::<f64>(function.symbol_ptr, &raw_args);
                 Ok(Value::Float(result))
             }
-            "ptr" | "pointer" => {
+            "ptr" | "pointer" | "cstr" => {
                 let result = function.cif.call::<*mut c_void>(function.symbol_ptr, &raw_args);
                 Ok(Value::QuadrupleWord(result as u64))
             }
@@ -219,6 +220,17 @@ trait RawValueHolder {
 
 struct TypedHolder<T> {
     value: Box<T>,
+}
+
+struct CStringHolder {
+    cstring: CString,       // keeps memory alive
+    ptr: u64,               // pointer for libffi
+}
+
+impl RawValueHolder for CStringHolder {
+    fn raw_ptr(&self) -> &dyn std::any::Any {
+        &self.ptr as &dyn std::any::Any
+    }
 }
 
 impl<T: 'static> RawValueHolder for TypedHolder<T> {
@@ -243,6 +255,31 @@ fn box_value(value: Value, ty: &str) -> Result<Box<dyn RawValueHolder>, String> 
         (Value::SignedQuadrupleWord(v), "u64" | "ptr" | "pointer") => Ok(Box::new(TypedHolder { value: Box::new(*v as u64) })),
         (Value::Single(v), "f32") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
         (Value::Float(v), "f64") => Ok(Box::new(TypedHolder { value: Box::new(*v) })),
+
+        // this... exists... Also it is VERY BAD
+        // might not even work
+        (Value::String(s), "ptr" | "pointer" | "cstr") => {
+            let c_str = CString::new(s.as_str())
+                .expect("failed to allocate C string");
+
+            // println!("C strnig: {:?}", c_str);
+
+            // If you're not 64-bit you're out, fuck the 32-bitters!
+            let ptr = c_str.as_ptr() as u64;
+
+            // println!("@: {:?}", ptr);
+
+            // This MAY or MAY NOT leak, we'll see
+            Ok(Box::new(CStringHolder { cstring: c_str, ptr }))
+        },
+
+        (Value::Ref(rc_refcell), "ptr" | "pointer" | "cstr") => {
+            let mut_ref: &mut Value = &mut *rc_refcell.borrow_mut();
+            let ptr: *mut Value = mut_ref as *mut Value;
+
+            Ok(Box::new(TypedHolder { value: Box::new(ptr) }))
+        },
+
         _ => Err(format!("unsupported argument type: {} for value {:?}", ty, value)),
     }
 }

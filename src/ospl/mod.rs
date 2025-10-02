@@ -23,6 +23,19 @@ pub mod ffi;
 // values and types
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Clone)]
+pub enum Type {
+    Null, Void,
+    Byte, SignedByte, Word, SignedWord, DoubleWord, SignedDoubleWord,
+    QuadrupleWord, SignedQuadrupleWord, Half, Single, Float,
+    Bool, String,
+    Tuple, Mixmap, Object, Class, Module,
+    MacroFn, RealFn,
+
+    // CFFI types
+    ForeignFn, ForeignLib, ForeignSymbol
+}
+
 /// Represents a value in OSPL
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -91,7 +104,7 @@ pub enum Value {
     ForeignSymbol {
         library: String,
         symbol: String,
-    }
+    },
 }
 
 impl Value {
@@ -192,6 +205,7 @@ impl Value {
 
             // silly types
             // this one practically just does nothing
+            Value::Bool(b) => Value::Bool(*b),
             Value::Ref(rc) => Value::Ref(rc.clone()),
             
             // stupid types
@@ -225,6 +239,8 @@ impl Value {
                 library: library.clone(),
                 symbol: symbol.clone(),
             },
+            Value::Null => Value::Null,
+            Value::Void => Value::Void,
 
             // error
             other @ _ => unimplemented!("Deep clone not implemented for: {:?}", other),
@@ -307,7 +323,9 @@ pub enum Expr {
     },
     Deref(Box<Expr>),
     Ref(Box<Expr>),
-    Construct(Box<Expr>),
+    Construct {
+        left: Box<Expr>,
+    },
 
     // stupid motherfuckers that don't want to follow the rules
     TupleLiteral(Vec<Rc<RefCell<Expr>>>),
@@ -325,6 +343,13 @@ pub enum Expr {
         body: Block,
     },
     Import(Vec<Statement>),
+
+    TypeCast {
+        left: Box<Expr>,
+        into: Type
+    },
+
+    // cffi only stuff
     ForeignFunctionLiteral {
         library: String,
         symbol: String,
@@ -338,7 +363,7 @@ pub enum Expr {
         target: Box<Expr>,
         arg_types: Vec<String>,
         return_type: String,
-    }
+    },
 }
 
 impl Expr {

@@ -117,7 +117,8 @@ impl Interpreter {
                     library: library.clone(),
                     symbol: combined,
                 }));
-            }
+            },
+
             _ => return a_value.clone()  // Already Rc<RefCell<Value>>
         };
     }
@@ -143,11 +144,17 @@ impl Interpreter {
             // increments its reference count.
             Expr::Variable(left) => {
                 let id = Self::expr(ctx.clone(), *left).borrow().clone().into_id();
-
-                ctx.borrow()
-                    .get(&id)
-                    .unwrap_or_else(|| panic!("oh no `{}` no exist!", id))
-                    .clone() // cheap Rc clone
+                // check if the ID is a *SPECIAL* literal
+                match id.as_ref() {
+                    // get OS platform
+                    "OSPL_current_os" => Rc::new(RefCell::new(Value::String(std::env::consts::OS.to_string()))),
+                    "OSPL_current_arch" => Rc::new(RefCell::new(Value::String(std::env::consts::ARCH.to_string()))),
+                    "OSPL_current_family" => Rc::new(RefCell::new(Value::String(std::env::consts::FAMILY.to_string()))),
+                    _ => ctx.borrow()
+                            .get(&id)
+                            .unwrap_or_else(|| panic!("oh no `{}` no exist!", id))
+                            .clone()  // cheap Rc clone
+                }
             }
 
             Expr::Property(a, b) => Self::property_access(ctx, a, b),
@@ -242,23 +249,32 @@ impl Interpreter {
 
             Expr::Deref(inner_expr) => {
                 let evaluated = Self::expr(ctx.clone(), *inner_expr);
+                let borrowed = evaluated.borrow();
 
-                let inner_rc = {
-                    let borrowed = evaluated.borrow();       // Ref<Value>
-                    if let Value::Ref(inner) = &*borrowed { // match the Value inside
-                        Rc::clone(inner)                     // clone the Rc<Value> inside Ref
-                    } else {
-                        panic!("derefed non-ref value");
+                match &*borrowed {
+                    Value::Ref(inner_rc) => Rc::clone(inner_rc),      // normal OSPL Ref
+
+                    // VERY BAD IDEA
+                    Value::QuadrupleWord(mistake) => {
+                        unsafe {
+                            let ptr = (*mistake) as *mut u8;
+                            Rc::new(
+                                RefCell::new(
+                                    Value::Byte(
+                                        *ptr
+                                    )
+                                )
+                            )
+                        }
                     }
-                };
+                    other => panic!("derefed non-ref value: {:?}", other),
+                }
+            }
 
-                return inner_rc; // Rc<Value>
-            },
+            Expr::Construct { left} => {
+                let evaluated = Self::expr(ctx.clone(), *left);
 
-            Expr::Construct(inner_expr) => {
-                let evaluated = Self::expr(ctx.clone(), *inner_expr);
-
-                return Self::class_construct(ctx, evaluated)
+                return Self::class_construct(ctx, evaluated);
             },
 
             Expr::TupleLiteral(inner_exprs) => {
@@ -360,6 +376,10 @@ impl Interpreter {
                         )
                     );
 
+                // UGLY HACK: steal the FFI registry from the parent module
+                // THIS IS ALSO VERY SLOW
+                // **DISABLED** because it doesn't work
+                //newctx.borrow_mut().ffi_registry = ctx.borrow().ffi_registry.clone();
 
                 // evaluate all that shit
                 for stmt in ast {
@@ -439,7 +459,27 @@ impl Interpreter {
                     arg_types,
                     return_type,
                 }));
-            }
+            },
+
+            // THIS IS AWFUL
+            Expr::TypeCast { left, into } => {
+                let value = Self::expr(ctx.clone(), *left);
+                let thing = match (&*value.borrow(), &into) {
+                    // stupid
+                    (Value::Byte(b), Type::String) => Value::String(String::from(*b as char)),
+                    (Value::SignedDoubleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
+                    (Value::SignedDoubleWord(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
+
+                    // more will be added as needed
+                    _ => panic!("idk how to cast {:?} into {:?}", value, into)
+                };
+
+                return Rc::new(
+                    RefCell::new(
+                        thing
+                    )
+                )
+            },
         }
     }
 
@@ -456,11 +496,12 @@ impl Interpreter {
     /// The control flow of the statement as `StatementControl`
     pub fn stmt(ctx: Rc<RefCell<Context>>, stmt: Statement) -> StatementControl {
         match stmt {
+            // TODO: fix that one bug mentioned in `object.rs`
             Statement::Assign { left, right } => {
                 let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *left);
                 let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
 
-                *var.borrow_mut() = lit.borrow().clone();
+                *var.borrow_mut() = lit.borrow().clone();  // here
                 return StatementControl::Default
             },
             

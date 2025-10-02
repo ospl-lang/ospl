@@ -1,5 +1,5 @@
 use std::{fs::File, io::Read};
-use crate::Statement;
+use crate::{Statement};
 
 use super::Parser;
 

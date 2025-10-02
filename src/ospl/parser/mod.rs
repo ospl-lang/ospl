@@ -15,6 +15,7 @@ pub mod literal;
 pub mod statement;
 pub mod controlflow;
 pub mod preprocess;
+pub mod types;
 
 pub struct Parser {
     input: String, // owned buffer
@@ -457,11 +458,11 @@ impl Parser {
             let class = self.expr()
                 .unwrap_or_else(|| self.parse_error("invalid class after `new`"));
 
-            Expr::Construct(
-                Box::new(
+            Expr::Construct {
+                left: Box::new(
                     class
                 )
-            )
+            }
         }
         
         else if self.peek_or_consume('@') {  // deref
@@ -583,6 +584,17 @@ impl Parser {
                 } else {
                     self.parse_error("Expected expr after dynamic property access");
                 }
+            }
+
+            // casting (type conversion)
+            if self.match_next("as ") {
+                let ty = self.typedef().expect("expected type def after `as` keyword");
+                return Some(
+                    Expr::TypeCast {
+                        left: Box::new(lhs),
+                        into: ty
+                    }
+                )
             }
 
             // function call

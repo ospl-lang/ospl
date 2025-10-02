@@ -5,16 +5,38 @@ use std::{fmt::Display, ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Div, Mul, S
 
 macro_rules! typical_op {
     ($lhs:expr, $rhs:expr, $op:tt) => {{
+        // THIS IS NOT A PRETTY MATCH STATEMENT BUT IT WILL BE A MATCH
+        // STATEMENT.
         match ($lhs, $rhs) {
             // integer types
             (Value::Byte(a), Value::Byte(b))                                => Value::Byte(a $op b),
             (Value::SignedByte(a), Value::SignedByte(b))                    => Value::SignedByte(a $op b),
-            (Value::Word(a), Value::Word(b))                                => Value::Word(a $op b),
-            (Value::SignedWord(a), Value::SignedWord(b))                    => Value::SignedWord(a $op b),
-            (Value::DoubleWord(a), Value::DoubleWord(b))                    => Value::DoubleWord(a $op b),
-            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => Value::SignedDoubleWord(a $op b),
+
+            // more promotions
+            (Value::Word(a), Value::Byte(b))                                => Value::Word(a $op b as u16),        // promote unsigned
+            (Value::Word(a), Value::SignedByte(b))                          => Value::Word(a $op b as u16),        // promote unsigned
+            (Value::SignedWord(a), Value::SignedByte(b))                    => Value::SignedWord(a $op b as i16),  // promote signed
+            (Value::SignedWord(a), Value::Byte(b))                          => Value::SignedWord(a $op b as i16),  // promote signed
+            (Value::Word(a), Value::Word(b))                                => Value::Word(a $op b),               // normal
+            (Value::SignedWord(a), Value::SignedWord(b))                    => Value::SignedWord(a $op b),         // normal
+
+            // A LOT MORE PROMOTIONS
+            (Value::DoubleWord(a), Value::Byte(b))                          => Value::DoubleWord(a $op b as u32),        // promote unsigned b
+            (Value::DoubleWord(a), Value::SignedByte(b))                    => Value::DoubleWord(a $op b as u32),        // promote unsigned b 
+            (Value::DoubleWord(a), Value::Word(b))                          => Value::DoubleWord(a $op b as u32),        // promote unsigned w
+            (Value::DoubleWord(a), Value::SignedWord(b))                    => Value::DoubleWord(a $op b as u32),        // promote unsigned w
+            (Value::SignedDoubleWord(a), Value::Byte(b))                    => Value::SignedDoubleWord(a $op b as i32),  // promote signed b
+            (Value::SignedDoubleWord(a), Value::SignedByte(b))              => Value::SignedDoubleWord(a $op b as i32),  // promote signed b 
+            (Value::SignedDoubleWord(a), Value::Word(b))                    => Value::SignedDoubleWord(a $op b as i32),  // promote signed w
+            (Value::SignedDoubleWord(a), Value::SignedWord(b))              => Value::SignedDoubleWord(a $op b as i32),  // promote signed w
+
+            (Value::DoubleWord(a), Value::DoubleWord(b))                    => Value::DoubleWord(a $op b),         // normal
+            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => Value::SignedDoubleWord(a $op b),   // normal
+
             (Value::QuadrupleWord(a), Value::QuadrupleWord(b))              => Value::QuadrupleWord(a $op b),
             (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))  => Value::SignedQuadrupleWord(a $op b),
+
+            // special one for pointer math
 
             // float types
             (Value::Half(a), Value::Half(b))                                => Value::Half(a $op b),
@@ -84,8 +106,7 @@ macro_rules! typical_cmp {
             (Value::Bool(x), Value::Bool(y))                                => x $op y,
 
             // stuff you CANNOT do
-            (Value::Null, _)                                                => panic!(">//< can't compare to Null!"),
-            (_, Value::Null)                                                => panic!(">//< can't compare with Null!"),
+            (Value::Null, Value::Null)                                      => true,
 
             (Value::Void, _)                                                => panic!(">//< can't compare to Void!"),
             (_, Value::Void)                                                => panic!(">//< can't compare with Void!"),

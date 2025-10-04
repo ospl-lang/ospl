@@ -592,7 +592,20 @@ impl Parser {
                 return Some(
                     Expr::TypeCast {
                         left: Box::new(lhs),
-                        into: ty
+                        into: ty,
+                        mode: crate::TypeCastMode::Convert
+                    }
+                )
+            }
+
+            // casting (pointer reinterpret)
+            if self.match_next("asPointerReinterpret ") {
+                let ty = self.typedef().expect("expected type def after `asPointerReinterpret` keyword");
+                return Some(
+                    Expr::TypeCast {
+                        left: Box::new(lhs),
+                        into: ty,
+                        mode: crate::TypeCastMode::PointerReinterpret
                     }
                 )
             }

@@ -1,5 +1,0 @@
-def pln = fn(stir) {
-    print stir + "\n"
-};
-
-pln("hi");

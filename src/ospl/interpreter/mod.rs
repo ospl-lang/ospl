@@ -56,6 +56,18 @@ impl Interpreter {
 
         match &*a_value.borrow() {
             Value::Tuple(t) => {
+                // if our key is a special tuple attribute
+                match b_key.as_str() {
+                    "len" => return Rc::new(
+                        RefCell::new(
+                            Value::QuadrupleWord(
+                                t.len() as u64
+                            )
+                        )
+                    ),
+                    _ => {}
+                }
+
                 // set current instance
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
@@ -462,7 +474,7 @@ impl Interpreter {
             },
 
             // THIS IS AWFUL
-            Expr::TypeCast { left, into } => {
+            Expr::TypeCast { left, into, mode: TypeCastMode::Convert } => {
                 let value = Self::expr(ctx.clone(), *left);
                 let thing = match (&*value.borrow(), &into) {
                     // stupid
@@ -480,6 +492,29 @@ impl Interpreter {
                     )
                 )
             },
+
+            Expr::TypeCast { mode: TypeCastMode::Reinterpret, .. } => {
+                unimplemented!("reinterpret cast is not yet implemented.")
+            },
+
+            Expr::TypeCast { left, into, mode: TypeCastMode::PointerReinterpret } => {
+                unsafe {
+                    let value = Self::expr(ctx.clone(), *left);
+
+                    let thing = match (&*value.borrow(), &into) {
+                        // quadruple word is a ptr
+                        (Value::QuadrupleWord(a), Type::String) => casts::ptr_to_string(*a as *const u8),
+                        (Value::QuadrupleWord(a), Type::Tuple) => casts::ptr_to_tuple(*a as *const u8),
+                        _ => panic!("idk how to cast {:?} into {:?}", value, into)
+                    };
+
+                    return Rc::new(
+                        RefCell::new(
+                            thing
+                        )
+                    )
+                }
+            }
         }
     }
 

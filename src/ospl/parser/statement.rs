@@ -123,9 +123,26 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("if statement requires condition"));
 
         // followed by on true block
+        // TWO WAYS OF DOING TRUE BLOCKS. EITHER YOU HAVE ONE STATEMENT OR A
+        // WHOLE BLOCK. WE IMPLEMENT BOTH HERE (sry 4 caps keyboard broke)
         self.skip_ws();
-        let on_true: Block = self.block()
-            .unwrap_or_else(|| self.parse_error("if statement requires block"));
+        let on_true: Block =
+            // multiple ones style
+            if let Some(multi_style) = self.attempt(Self::block) {
+                multi_style
+            }
+
+            // single ones style
+            else if let Some(single_style) = self.attempt(Self::stmt) {
+                Block(
+                    vec![single_style]
+                )
+            }
+            
+            // oops the person is stoopid
+            else {
+                panic!("if statement requires a true block")
+            };
 
         // support else blocks
         self.skip_ws();

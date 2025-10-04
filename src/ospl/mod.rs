@@ -18,6 +18,7 @@ pub enum Subspec {
 pub mod interpreter;
 pub mod parser;
 pub mod ffi;
+pub mod casts;
 
 ///////////////////////////////////////////////////////////////////////////////
 // values and types
@@ -346,7 +347,8 @@ pub enum Expr {
 
     TypeCast {
         left: Box<Expr>,
-        into: Type
+        into: Type,
+        mode: TypeCastMode
     },
 
     // cffi only stuff
@@ -364,6 +366,13 @@ pub enum Expr {
         arg_types: Vec<String>,
         return_type: String,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeCastMode {
+    Convert,
+    Reinterpret,
+    PointerReinterpret
 }
 
 impl Expr {

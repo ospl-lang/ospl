@@ -14,8 +14,25 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("expected a spec"));
 
         self.skip_ws();
-        let block = self.block()
-            .unwrap_or_else(|| self.parse_error("expected a block"));
+
+        // classic weird "two-style" blocks around the codebase.
+        // yada yada yada you can put a single statement or a block
+        let block: Block =
+            // multi-style
+            if let Some(multi_style) = self.attempt(Self::block) {
+                multi_style
+            }
+
+            // single-style
+            else if let Some(single_style) = self.attempt(Self::stmt) {
+                Block(
+                    vec![single_style]
+                )
+            }
+
+            else {
+                panic!("you don't know how a case statement works...")
+            };
 
         return Some((spec, block))
     }

@@ -39,3 +39,9 @@ CALL THIS FUCKING EVERYWHERE THERE CAN BE A SPACE OR A COMMENT OR SOMETHING LIKE
 this is the thing used for thisrefs
 
 ## binary op table
+TBA
+
+# SYNTAX STUFF
+## "two-style"
+Basically, two-style is the difference between `if x > 0 print 'hi';` (single-style) and `if x > 0 {print 'hi'};` (multi-style)
+It's just a way to say there's two ways of writing it.

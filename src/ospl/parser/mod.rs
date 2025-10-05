@@ -219,7 +219,7 @@ impl Parser {
         return Some(stmts)
     }
     
-    fn module_root_stmts(&mut self) -> Option<Vec<Statement>> {
+    pub fn module_root_stmts(&mut self) -> Option<Vec<Statement>> {
         let mut stmts: Vec<Statement> = Vec::new();
         loop {
             self.skip_ws();

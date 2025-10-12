@@ -107,6 +107,8 @@ macro_rules! typical_cmp {
 
             // stuff you CANNOT do
             (Value::Null, Value::Null)                                      => true,
+            (_, Value::Null)                                                => false,
+            (Value::Null, _)                                                => false,
 
             (Value::Void, _)                                                => panic!(">//< can't compare to Void!"),
             (_, Value::Void)                                                => panic!(">//< can't compare with Void!"),

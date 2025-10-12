@@ -291,15 +291,15 @@ impl Parser {
     const GROUP_CLOSE: &str = "]";
     pub fn prefix_expr(&mut self) -> Option<Expr> {
         // ==== DO THE LHS ====
-        let lhs = if self.match_next("?!CFFI_Load ") {
+        let lhs = if self.match_next("OSPL_CFFI_Load ") {
             self.skip_ws();
             let path = self.raw_string_literal()
-                .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"))
+                .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"))
                 .into_id();
             Expr::CffiLoad { path }
         }
 
-        else if self.match_next("?!CFFI_Fn ") {
+        else if self.match_next(Self::OSPL_CFFI_FN_KW) {
             self.skip_ws();
             let target_expr = self.parse_cffi_target();
 
@@ -453,18 +453,6 @@ impl Parser {
             )
         }
         
-        else if self.match_next("new ") {  // class construction
-            self.skip_ws();
-            let class = self.expr()
-                .unwrap_or_else(|| self.parse_error("invalid class after `new`"));
-
-            Expr::Construct {
-                left: Box::new(
-                    class
-                )
-            }
-        }
-        
         else if self.peek_or_consume('@') {  // deref
             // whitespace is not allowed
             let expr = self.expr()
@@ -492,6 +480,9 @@ impl Parser {
         return Some(lhs)
     }
 
+    const OSPL_CFFI_FN_KW: &str = "OSPL_CFFI_Fn";
+    const OSPL_CFFI_LOAD_KW: &str = "OSPL_CFFI_Load";
+
     const PROP_ACCESS_CHAR: char = '.';
     const PROP_DYN_ACCESS_CHAR: char = ':';
     pub fn expr(&mut self) -> Option<Expr> {
@@ -502,7 +493,7 @@ impl Parser {
             self.skip_ws();
 
             // CFFI load literal
-            if self.match_next("?!CFFI_Load ") {
+            if self.match_next(Self::OSPL_CFFI_LOAD_KW) {
                 self.skip_ws();
                 let path_literal = self.raw_string_literal()
                     .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"));
@@ -512,7 +503,7 @@ impl Parser {
             }
 
             // CFFI function binding
-            if self.match_next("?!CFFI_Fn ") {
+            if self.match_next(Self::OSPL_CFFI_FN_KW) {
                 self.skip_ws();
 
                 let target_expr = self.expr()
@@ -748,6 +739,11 @@ impl Parser {
 
         // ==== IMPORT LIBRARY ====
         else if let Some(s) = self.attempt(Self::import_lib) {
+            return Some(s)
+        }
+
+        // ==== BAD IDEA ====
+        else if let Some(s) = self.attempt(Self::bad_idea) {
             return Some(s)
         }
 

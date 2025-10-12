@@ -76,6 +76,40 @@ impl Interpreter {
                     );
                 },
 
+                // these are slower but allow enforcement at runtime
+                // seperare variants for speed reasons
+                Subspec::BindRefTyped(key, target_typ) => {
+                    let data = 
+                        args
+                        .next()
+                        .ok_or(DestructionError::NotEnoughArgs)?
+                        .borrow()
+                        .clone();  // difference!
+
+                    let typ = data.as_type();
+                    if typ != target_typ {
+                        panic!("failed type annotation check on BindRefTyped, expected {:?}, got {:?}", target_typ, typ);
+                    }
+
+                    ctx.borrow_mut().set(&key, data);
+                },
+
+                Subspec::BindTyped(key, target_typ) => {
+                    let data = 
+                        args
+                        .next()
+                        .ok_or(DestructionError::NotEnoughArgs)?
+                        .borrow()
+                        .deep_clone();
+
+                    let typ = data.as_type();
+                    if typ != target_typ {
+                        panic!("failed type annotation check on BindTyped, expected {:?}, got {:?}", target_typ, typ);
+                    }
+
+                    ctx.borrow_mut().set(&key, data);
+                },
+
                 Subspec::Destruct(tree) => Self::destruct_into(
                     ctx.clone(),
                     tree,

@@ -414,26 +414,18 @@ impl Parser {
         return parents
     }
 
-    const CLASS_LITERAL_KW: &str = "cls";
-    pub fn class_literal(&mut self) -> Option<Expr> {
-        if !self.match_next(Self::CLASS_LITERAL_KW) {
+    const COPY_KW: &str = "copyof ";
+    pub fn copyof_expr(&mut self) -> Option<Expr> {
+        if !self.match_next(Self::COPY_KW) {
             return None
         }
         self.skip_ws();
 
-        let parents: Vec<Rc<RefCell<Expr>>> = self.construct_class_parents();
-
-        // disable parents for builds cuz its broken rn
-        //let parents: Vec<Rc<RefCell<Expr>>> = vec![];
-
-        let symbols: HashMap<String, Rc<RefCell<Expr>>> = self.construct_class_symbols()
-            .unwrap_or_else(|| self.parse_error("no class symbol block given"));
+        let thing = self.expr()
+            .unwrap_or_else(|| self.parse_error("need valid expression to make a copy of a thing"));
 
         return Some(
-            Expr::ClassLiteral {
-                parents,
-                symbols
-            }
+            Expr::DeepCopy(Box::new(thing))
         )
     }
 
@@ -513,7 +505,7 @@ impl Parser {
             return Some(obj)
         }
 
-        else if let Some(class) = self.attempt(Self::class_literal) {
+        else if let Some(class) = self.attempt(Self::copyof_expr) {
             return Some(class)
         }
 

@@ -18,7 +18,7 @@ pub struct Interpreter;
 
 pub mod function;
 pub mod controlflow;
-pub mod object;
+
 
 impl Interpreter {
     fn solve_for_avbk(
@@ -80,6 +80,34 @@ impl Interpreter {
             },
 
             Value::Mixmap { ordered, keyed } => {
+                // if our key is a special attribute
+                match b_key.as_str() {
+                    // lengths
+                    "len" => return Rc::new(
+                        RefCell::new(
+                            Value::QuadrupleWord(
+                                ordered.len() as u64 + keyed.len() as u64
+                            )
+                        )
+                    ),
+                    "npos" => return Rc::new(RefCell::new(Value::QuadrupleWord(ordered.len() as u64))),
+                    "nkey" => return Rc::new(RefCell::new(Value::QuadrupleWord(keyed.len() as u64))),
+
+                    // TODO: stop doing this
+                    // convert keys to object (dunno why I'm doing this here and not on the fucking typecast.. ehsy!)
+                    // not final, probs get removed in 0.1.0 or 1.0.0
+                    "keys" => return Rc::new(RefCell::new(Value::Object {
+                        symbols: keyed.clone()
+                    })),
+
+                    // convert positionals to object (dunno why I'm doing this here and not on the fucking typecast.. ehsy!)
+                    // not final, probs get removed in 0.1.0 or 1.0.0
+                    "positionals" => return Rc::new(RefCell::new(Value::Tuple(ordered.clone()))),
+
+                    _ => {}
+                }
+
+                // ==== NORMAL CASE ====
                 // set current instance
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
@@ -96,8 +124,16 @@ impl Interpreter {
                         .expect(">//< bad key")
                         .clone()
                 }
-            }
-            Value::Object { symbols } | Value::Class { symbols, .. } => {
+            },
+
+            Value::Object { symbols } => {
+                // if our key is a special attribute
+                match b_key.as_str() {
+                    "len" | "nkey" => return Rc::new(RefCell::new(Value::QuadrupleWord(symbols.len() as u64))),
+                    _ => {}
+                }
+
+                // ==== NORMAL CASE ====
                 // set current instance
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
@@ -130,6 +166,12 @@ impl Interpreter {
                     symbol: combined,
                 }));
             },
+            Value::String(s) => {
+                match b_key.as_str() {
+                    "len" => return Rc::new(RefCell::new(Value::QuadrupleWord(s.len() as u64))),
+                    _ => panic!("type `str` has no property {}", b_key)
+                }
+            }
 
             _ => return a_value.clone()  // Already Rc<RefCell<Value>>
         };
@@ -283,12 +325,6 @@ impl Interpreter {
                 }
             }
 
-            Expr::Construct { left} => {
-                let evaluated = Self::expr(ctx.clone(), *left);
-
-                return Self::class_construct(ctx, evaluated);
-            },
-
             Expr::TupleLiteral(inner_exprs) => {
                 let mut values: Vec<Rc<RefCell<Value>>> = Vec::new();
                 for expr in inner_exprs {
@@ -300,31 +336,6 @@ impl Interpreter {
                         Value::Tuple(values)
                     )
                 );
-            },
-
-            Expr::ClassLiteral { parents, symbols } => {
-                // compute symbols
-                let mut new_symbols: HashMap<String, Rc<RefCell<Value>>> = HashMap::new();
-                for (id, symbol) in symbols {
-                    let val = Self::expr(ctx.clone(), symbol.borrow().clone());
-                    new_symbols.insert(id, val);
-                }
-
-                // compute parents
-                let mut new_parents: Vec<Rc<RefCell<Value>>> = Vec::new();
-                for parent in &*parents {
-                    let val = Self::expr(ctx.clone(), parent.borrow().clone());
-                    new_parents.push(val);
-                }
-
-                return Rc::new(
-                    RefCell::new(
-                        Value::Class {
-                            parents: new_parents,
-                            symbols: new_symbols
-                        }
-                    )
-                )
             },
 
             Expr::MixmapLiteral { positional, keyed } => {
@@ -481,6 +492,13 @@ impl Interpreter {
                     (Value::Byte(b), Type::String) => Value::String(String::from(*b as char)),
                     (Value::SignedDoubleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
                     (Value::SignedDoubleWord(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
+                    (Value::String(s), Type::Tuple) => Value::Tuple(
+                        s
+                        .as_bytes()
+                        .iter()
+                        .map(|x| Rc::new(RefCell::new(Value::Byte(*x))))
+                        .collect()
+                    ),
 
                     // more will be added as needed
                     _ => panic!("idk how to cast {:?} into {:?}", value, into)
@@ -514,6 +532,15 @@ impl Interpreter {
                         )
                     )
                 }
+            },
+
+            Expr::DeepCopy(of) => {
+                let value = Self::expr(ctx.clone(), *of);
+                return Rc::new(
+                    RefCell::new(
+                        value.borrow().deep_clone()
+                    )
+                );
             }
         }
     }
@@ -628,7 +655,17 @@ impl Interpreter {
                     Err(e) => panic!("Failed to load library: {}", e),
                 }
                 return StatementControl::Default;
-            }
+            },
+
+            Statement::BadIdea { address, value } => {
+                let a = Self::expr(ctx.clone(), address);
+                let addr = a.borrow().as_usize();
+                let v = Self::expr(ctx.clone(), value);
+                unsafe {
+                    casts::write_value_to_memory(addr, v);
+                }
+                return StatementControl::Default;
+            },
         }
     }
 

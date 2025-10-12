@@ -197,4 +197,28 @@ impl Parser {
 
         Some(Statement::ImportLib { name: lib_name, path: lib_path })
     }
+
+    pub fn bad_idea(&mut self) -> Option<Statement> {
+        if !self.match_next("OSPL_memcpy ") {
+            return None;
+        }
+
+        self.skip_ws();
+        let address = self.expr()
+            .unwrap_or_else(|| self.parse_error("expected valid expression for address"));
+
+        self.skip_ws();
+        self.expect_char(',');
+        self.skip_ws();
+
+        let value = self.expr()
+            .unwrap_or_else(|| self.parse_error("expected valid expression for value"));
+
+        return Some(
+            Statement::BadIdea {
+                address,
+                value
+            }
+        );
+    }
 }

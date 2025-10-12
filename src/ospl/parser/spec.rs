@@ -8,7 +8,20 @@ impl Parser {
         // ==== BASE CASE(s) ====
         // ==== VALUE BIND ====
         if let Some(id) = self.attempt(Self::identifier) {
-            // we do a binding
+            // check if there is a type annotation
+            if self.peek_or_consume(':') {
+                self.skip_ws();
+                let target_typ = self.typedef()
+                    .unwrap_or_else(|| self.parse_error("expected valid type identifier in typed ref bind (after `:`)"));
+
+                return Some(
+                    Subspec::BindTyped(
+                        id, target_typ
+                    )
+                );
+            }
+
+            // we do a binding otherwise
             return Some(Subspec::Bind(id))
         }
 
@@ -16,7 +29,22 @@ impl Parser {
         else if self.peek_or_consume('$') {
             // we bind by reference
             let Some(id) = self.attempt(Self::identifier)
-            else { return None };
+            else {
+                self.parse_error("expected an identifier after ref bind");
+            };
+
+            // check if there is a type annotation next to it
+            if self.peek_or_consume(':') {
+                self.skip_ws();
+                let target_typ = self.typedef()
+                    .unwrap_or_else(|| self.parse_error("expected valid type identifier in typed ref bind (after `:`)"));
+
+                return Some(
+                    Subspec::BindRefTyped(
+                        id, target_typ
+                    )
+                );
+            }
 
             return Some(Subspec::BindRef(id));
         }

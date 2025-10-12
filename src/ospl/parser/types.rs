@@ -2,6 +2,8 @@ use super::*;
 use crate::Type;
 
 impl Parser {
+    const OSPL_CFFI_SYMBOL_TYPE: &str = "OSPL_CFFI_Symbol";
+    const OSPL_CFFI_LIBRARY_TYPE: &str = "OSPL_CFFI_Library";
     pub fn typedef(&mut self) -> Option<Type> {
         return Some(
             if      self.match_next("byte") {Type::Byte}
@@ -18,12 +20,11 @@ impl Parser {
             else if self.match_next("bool") {Type::Bool}
             else if self.match_next("str") {Type::String}
             else if self.match_next("tuple") {Type::Tuple}
-            else if self.match_next("mixmap") {Type::Mixmap}
-            else if self.match_next("object") {Type::Object}
-            else if self.match_next("class") {Type::Class}
-            else if self.match_next("?!CFFI_Symbol") {Type::ForeignSymbol}
-            else if self.match_next("?!CFFI_Function") {Type::ForeignFn}
-            else if self.match_next("?!CFFI_Library") {Type::ForeignLib}
+            else if self.match_next("mix") {Type::Mixmap}
+            else if self.match_next("obj") {Type::Object}
+            else if self.match_next(Self::OSPL_CFFI_SYMBOL_TYPE) {Type::ForeignSymbol}
+            else if self.match_next(Self::OSPL_CFFI_FN_KW) {Type::ForeignFn}
+            else if self.match_next(Self::OSPL_CFFI_LIBRARY_TYPE) {Type::ForeignLib}
             else {return None}
         )
     }

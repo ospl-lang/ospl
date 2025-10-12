@@ -9,6 +9,11 @@ use crate::Context;
 pub enum Subspec {
     Bind(String),
     BindRef(String),
+
+    BindTyped(String, Type),
+    BindRefTyped(String, Type),
+
+    // yay
     Destruct(Vec<Subspec>),
     Literal(Value),
     Ignore,
@@ -24,17 +29,37 @@ pub mod casts;
 // values and types
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Null, Void,
     Byte, SignedByte, Word, SignedWord, DoubleWord, SignedDoubleWord,
     QuadrupleWord, SignedQuadrupleWord, Half, Single, Float,
     Bool, String,
-    Tuple, Mixmap, Object, Class, Module,
+    Tuple, Mixmap, Object, Module, Ref,
     MacroFn, RealFn,
 
     // CFFI types
     ForeignFn, ForeignLib, ForeignSymbol
+}
+
+impl Type {
+    pub fn as_bitwidth(&self) -> usize {
+        match self {
+            Type::Bool => size_of::<bool>(),
+            Type::Byte => size_of::<u8>(),
+            Type::SignedByte => size_of::<i8>(),
+            Type::Word => size_of::<u16>(),
+            Type::SignedWord => size_of::<i16>(),
+            Type::DoubleWord => size_of::<u32>(),
+            Type::SignedDoubleWord => size_of::<i32>(),
+            Type::QuadrupleWord => size_of::<u64>(),
+            Type::SignedQuadrupleWord => size_of::<i64>(),
+            Type::Half => size_of::<f32>(),  // f16 is unstable
+            Type::Single => size_of::<f32>(),
+            Type::Float => size_of::<f64>(),
+            _ => panic!("cannot get bitwidth of type {:?}", self)
+        }
+    }
 }
 
 /// Represents a value in OSPL
@@ -84,10 +109,6 @@ pub enum Value {
     },
     Object {
         symbols: HashMap<String, Rc<RefCell<Value>>>,
-    },
-    Class {
-        parents: Vec<Rc<RefCell<Value>>>,
-        symbols: HashMap<String, Rc<RefCell<Value>>>
     },
     Module {
         // THIS IS REALLY RETARDED BUT I DON'T GIVE A FUCK
@@ -247,6 +268,53 @@ impl Value {
             other @ _ => unimplemented!("Deep clone not implemented for: {:?}", other),
         }
     }
+
+    pub fn as_type(&self) -> Type {
+        match &self {
+            Value::Bool(_) => Type::Bool,
+            Value::Byte(_) => Type::Byte,
+            Value::SignedByte(_) => Type::SignedByte,
+            Value::Word(_) => Type::Word,
+            Value::SignedWord(_) => Type::SignedWord,
+            Value::DoubleWord(_) => Type::DoubleWord,
+            Value::SignedDoubleWord(_) => Type::SignedDoubleWord,
+            Value::QuadrupleWord(_) => Type::QuadrupleWord,
+            Value::SignedQuadrupleWord(_) => Type::SignedQuadrupleWord,
+            Value::Half(_) => Type::Half,
+            Value::Single(_) => Type::Single,
+            Value::Float(_) => Type::Float,
+            Value::String(_) => Type::String,
+            Value::Void => Type::Void,
+            Value::Null => Type::Null,
+
+            Value::Object { .. } => Type::Object,
+            Value::Mixmap { .. } => Type::Mixmap,
+            Value::Tuple(_) => Type::Tuple,
+
+            Value::RealFn { .. } => Type::RealFn,
+            Value::MacroFn { .. } => Type::MacroFn,
+            Value::Ref { .. } => Type::Ref,
+
+            Value::Module { .. } => Type::Module,
+
+            _ => Type::Void
+        }
+    }
+
+    pub fn as_usize(&self) -> usize {
+        match &self {
+            Value::Bool(_) => panic!("bool aint a number stoopid"),
+            Value::Byte(b) => *b as usize,
+            Value::SignedByte(b) =>  *b as usize,
+            Value::Word(b) => *b as usize,
+            Value::SignedWord(b) => *b as usize,
+            Value::DoubleWord(b) => *b as usize,
+            Value::SignedDoubleWord(b) => *b as usize,
+            Value::QuadrupleWord(b) => *b as usize,
+            Value::SignedQuadrupleWord(b) => *b as usize,
+            _ => panic!("can't get the number for that STUPID")
+        }
+    }
 }
 
 pub mod value_traits;
@@ -302,6 +370,11 @@ pub enum Statement {
         name: String,
         path: String,
     },
+
+    BadIdea {
+        address: Expr,
+        value: Expr,
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -324,16 +397,9 @@ pub enum Expr {
     },
     Deref(Box<Expr>),
     Ref(Box<Expr>),
-    Construct {
-        left: Box<Expr>,
-    },
 
     // stupid motherfuckers that don't want to follow the rules
     TupleLiteral(Vec<Rc<RefCell<Expr>>>),
-    ClassLiteral {
-        parents: Vec<Rc<RefCell<Expr>>>,
-        symbols: HashMap<String, Rc<RefCell<Expr>>>
-    },
     ObjectLiteral(HashMap<String, Rc<RefCell<Expr>>>),
     MixmapLiteral {
         positional: Vec<Rc<RefCell<Expr>>>,
@@ -366,6 +432,8 @@ pub enum Expr {
         arg_types: Vec<String>,
         return_type: String,
     },
+
+    DeepCopy(Box<Expr>)
 }
 
 #[derive(Debug, Clone)]

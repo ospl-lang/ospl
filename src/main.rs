@@ -1,91 +1,56 @@
 pub mod ospl;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{
+    cell::RefCell, env::args, fs::File, io::Read, rc::Rc
+};
 
-use crate::ospl::*;
+use crate::ospl::{
+    interpreter::Context, parser::Parser, *
+};
+
+#[allow(dead_code)]
+fn use_this_as_main_temporarily_if_you_use_vscode_debugger() {
+    runfile("test.ospl".into(), "block");
+}
 
 fn main() {
-    let root: interpreter::Context = interpreter::Context::new(None);
-    let ctx: Rc<RefCell<interpreter::Context>> = Rc::new(RefCell::new(root));
+    // no clap or anything because I hate myself
+    let arg: Vec<String> = args().collect();
+    let cmd = &arg.get(1).expect("please specify a command on the command line!");
 
-    let stmt: ospl::Statement = ospl::Statement::VariableAssignment {
-        left: "add".into(),
-        right: Box::new(
-            ospl::Expr::Literal(
-                ospl::Value::Function {
-                    spec: vec![
-                        Subspec::Bind("a".into()),
-                        Subspec::Bind("b".into()),
-                    ],
-                    body: ospl::Block(vec![
-                        // infinite loop
-                        Statement::VariableAssignment {
-                            left: "i".into(),
-                            right: Box::new(
-                                Expr::Literal(
-                                    Value::QuadrupleWord(0)
-                                )
-                            )
-                        },
-                        Statement::Expression(
-                            Expr::Loop(
-                                Box::new(
-                                    Block(vec![
-                                        Statement::VariableAssignment {
-                                            left: "i".into(),
-                                            right: Box::new(Expr::BinaryOp {
-                                                left: Box::new(Expr::Variable("i".into())),
-                                                right: Box::new(Expr::Literal(Value::QuadrupleWord(1))),
-                                                op: "+".into()
-                                            })
-                                        },
-                                        Statement::Expression(Expr::FunctionCall {
-                                            name: "println".into(),
-                                            args: vec![
-                                                Expr::Variable("i".into())
-                                            ]
-                                        }),
-                                        Statement::If {
-                                            condition: Expr::BinaryOp {
-                                                left: Box::new(Expr::Variable("i".into())),
-                                                right: Box::new(Expr::Literal(Value::QuadrupleWord(10))),
-                                                op: "==".into()
-                                            },
-                                            on_true: Block(vec![
-                                                Statement::Return(Expr::Literal(Value::QuadrupleWord(69727420)))
-                                            ])
-                                        },
-                                    ])
-                                )
-                            )
-                        ),
+    match cmd.as_ref() {
+        "run" | "exe" | "r" => runfile(
+            arg.get(2).expect("please specify a path to the script you wish to run").clone(),
+            "stmts"
+        ),
+        "run-expr" => runfile(
+            arg.get(2).expect("please specify a path to the script you wish to run").clone(),
+            "expr"
+        ),
+        "run-stmt" => runfile(
+            arg.get(2).expect("please specify a path to the script you wish to run").clone(),
+            "stmt"
+        ),
+        _ => panic!("unknown command"),
+    }
 
-                        // return test
-                        Statement::Return(Expr::BinaryOp {
-                            left: Box::new(Expr::Variable("a".into())),
-                            right: Box::new(Expr::Variable("b".into())),
-                            op: "+".into()
-                        })
-                    ])
-                }
-            )
-        )
-    };
-    // interpreter::Interpreter::stmt(ctx.clone(), stmt.clone());
-    interpreter::Interpreter::block(
-        ctx,
-        Block(vec![
-            stmt.clone(),
-            Statement::Expression(
-                Expr::FunctionCall {
-                    name: "add".into(),
-                    args: vec![
-                        Expr::Literal(Value::QuadrupleWord(9)),
-                        Expr::Literal(Value::QuadrupleWord(10)),
-                    ]
-                }
-            ),
-        ]));
+}
 
-    //println!("{:#?}", stmt.clone());
+fn runfile(path: String, target: &str) {
+    // set up
+    let ctx: Rc<RefCell<Context>> = Rc::new(RefCell::new(Context::new(None)));
+    let p = &mut Parser::new();
+
+    // load file data
+    let mut file = File::open(path).expect("file not found!");
+    let mut s = String::new();
+    file.read_to_string(&mut s).expect("failed to read file");
+
+    // run!
+    match target.as_ref() {
+        "stmts" => parser::stmts(ctx.clone(), p, &s),
+        "block" => parser::block(ctx.clone(), p, &s),
+        "stmt" => parser::stmt(ctx.clone(), p, &s),
+        "expr" => parser::expr(ctx.clone(), p, &s),
+        _ => panic!("unknown target")
+    }
 }

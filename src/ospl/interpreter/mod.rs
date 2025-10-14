@@ -148,6 +148,7 @@ impl Interpreter {
                     )
                     .clone()
             },
+
             Value::Module { context } => return context
                 .borrow()
                 .get(&b_key)
@@ -158,6 +159,7 @@ impl Interpreter {
                     symbol: b_key,
                 }));
             }
+
             Value::ForeignSymbol { library, symbol } => {
                 // allow chained property access: treat as namespace under symbol
                 let combined = format!("{}::{}", symbol, b_key);
@@ -166,7 +168,17 @@ impl Interpreter {
                     symbol: combined,
                 }));
             },
+
             Value::String(s) => {
+                if let Ok((a, b)) = scan_fmt::scan_fmt!(&b_key, "{}_{}", usize, usize) {
+                    return Rc::new(RefCell::new(Value::String(s[a..b].to_string())))
+                }
+
+                if let Ok(a) = &b_key.parse::<usize>() {
+                    let actual_a = *a;
+                    return Rc::new(RefCell::new(Value::String(s[actual_a..actual_a+1].to_string())))
+                }
+
                 match b_key.as_str() {
                     "len" => return Rc::new(RefCell::new(Value::QuadrupleWord(s.len() as u64))),
                     _ => panic!("type `str` has no property {}", b_key)
@@ -492,6 +504,9 @@ impl Interpreter {
                     (Value::Byte(b), Type::String) => Value::String(String::from(*b as char)),
                     (Value::SignedDoubleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
                     (Value::SignedDoubleWord(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
+
+                    (Value::QuadrupleWord(a), Type::String) => Value::String(a.to_string()),
+
                     (Value::String(s), Type::Tuple) => Value::Tuple(
                         s
                         .as_bytes()

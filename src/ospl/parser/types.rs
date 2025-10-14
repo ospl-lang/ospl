@@ -25,6 +25,16 @@ impl Parser {
             else if self.match_next(Self::OSPL_CFFI_SYMBOL_TYPE) {Type::ForeignSymbol}
             else if self.match_next(Self::OSPL_CFFI_FN_KW) {Type::ForeignFn}
             else if self.match_next(Self::OSPL_CFFI_LIBRARY_TYPE) {Type::ForeignLib}
+            else if self.match_next("ref") {
+                if  self.match_next("to ") {
+                    let to = self.typedef()
+                        .unwrap_or_else(|| self.parse_error("expected type definition after `ref(`"));
+
+                    return Some(Type::Ref(Some(Box::new(to))));
+                } else {
+                    return Some(Type::Ref(None))
+                }
+            }
             else {return None}
         )
     }

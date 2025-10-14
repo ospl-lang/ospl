@@ -15,7 +15,7 @@ pub enum Subspec {
 
     // yay
     Destruct(Vec<Subspec>),
-    Literal(Value),
+    LiteralRequirement(Value),
     Ignore,
     ThisRef(String)
 }
@@ -35,7 +35,7 @@ pub enum Type {
     Byte, SignedByte, Word, SignedWord, DoubleWord, SignedDoubleWord,
     QuadrupleWord, SignedQuadrupleWord, Half, Single, Float,
     Bool, String,
-    Tuple, Mixmap, Object, Module, Ref,
+    Tuple, Mixmap, Object, Module, Ref(Option<Box<Type>>),
     MacroFn, RealFn,
 
     // CFFI types
@@ -224,6 +224,14 @@ impl Value {
                     symbols: hm,
                 }
             },
+            Value::Mixmap { keyed, ordered } => {
+                let keyed = keyed.clone();
+                let ordered = ordered.clone();
+                return Value::Mixmap {
+                    keyed,
+                    ordered
+                }
+            },
 
             // silly types
             // this one practically just does nothing
@@ -293,7 +301,13 @@ impl Value {
 
             Value::RealFn { .. } => Type::RealFn,
             Value::MacroFn { .. } => Type::MacroFn,
-            Value::Ref { .. } => Type::Ref,
+            Value::Ref(to) => Type::Ref(
+                Some(
+                    Box::new(
+                        to.borrow().as_type()
+                    )
+                )
+            ),
 
             Value::Module { .. } => Type::Module,
 

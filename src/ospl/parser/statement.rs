@@ -104,7 +104,7 @@ impl Parser {
     }
 
     pub fn continue_statement(&mut self) -> Option<Statement> {
-        if !self.match_next("continue ") {
+        if !self.match_next("continue") {
             return None
         }
 

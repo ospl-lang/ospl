@@ -223,8 +223,8 @@ struct TypedHolder<T> {
 }
 
 struct CStringHolder {
-    cstring: CString,       // keeps memory alive
-    ptr: u64,               // pointer for libffi
+    _cstring_keepalive: CString,       // keeps memory alive
+    ptr: u64,                          // pointer for libffi
 }
 
 impl RawValueHolder for CStringHolder {
@@ -270,7 +270,7 @@ fn box_value(value: Value, ty: &str) -> Result<Box<dyn RawValueHolder>, String> 
             // println!("@: {:?}", ptr);
 
             // This MAY or MAY NOT leak, we'll see
-            Ok(Box::new(CStringHolder { cstring: c_str, ptr }))
+            Ok(Box::new(CStringHolder { _cstring_keepalive: c_str, ptr }))
         },
 
         (Value::Ref(rc_refcell), "ptr" | "pointer" | "cstr") => {

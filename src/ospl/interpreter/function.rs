@@ -57,6 +57,7 @@ impl Interpreter {
                     b.current_instance.take();
                 },
 
+                // nobody uses these but whatever
                 Subspec::BindRef(key) => {
                     ctx.borrow_mut().set(&key, 
                         // this passes by reference
@@ -76,7 +77,7 @@ impl Interpreter {
                     );
                 },
 
-                // these are slower but allow enforcement at runtime
+                // these are slower but allow type enforcement at runtime
                 // seperare variants for speed reasons
                 Subspec::BindRefTyped(key, target_typ) => {
                     let data = 
@@ -116,7 +117,7 @@ impl Interpreter {
                         args.next().ok_or(DestructionError::NotEnoughArgs)?.borrow().clone().into_values()
                 )?,
 
-                Subspec::Literal(v) => {
+                Subspec::LiteralRequirement(v) => {
                     let arg = args.next().ok_or(DestructionError::NotEnoughArgs)?;
                     if *arg.borrow() != v {
                         return Err(DestructionError::LiteralRequirementFailed);

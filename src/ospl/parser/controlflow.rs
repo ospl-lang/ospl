@@ -31,7 +31,7 @@ impl Parser {
             }
 
             else {
-                panic!("you don't know how a case statement works...")
+                self.parse_error("you don't know how a case statement works...")
             };
 
         return Some((spec, block))
@@ -54,6 +54,10 @@ impl Parser {
                     self.pos += 1;  // consume closing brace
                     break;
                 },
+                Some(',') => {
+                    self.pos += 1;
+                    continue;
+                }
                 Some(_) => {
                     cases.push(
                         self.parse_case()

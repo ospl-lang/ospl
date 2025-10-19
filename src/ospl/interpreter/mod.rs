@@ -18,7 +18,7 @@ pub struct Interpreter;
 
 pub mod function;
 pub mod controlflow;
-
+pub mod assignop;
 
 impl Interpreter {
     fn solve_for_avbk(
@@ -209,7 +209,7 @@ impl Interpreter {
             // cloning here doesn't ACTUALLY clone the value, it just
             // increments its reference count.
             Expr::Variable(left) => {
-                let id = Self::expr(ctx.clone(), *left).borrow().clone().into_id();
+                let id = Self::expr(ctx.clone(), *left).borrow().into_id();
                 // check if the ID is a *SPECIAL* literal
                 match id.as_ref() {
                     // get OS platform
@@ -233,11 +233,12 @@ impl Interpreter {
                     .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
                     .collect();
 
+                // colton says: dunno how this works so I can't optimize it without kevin's help..
                 match &*function.borrow() {
                     Value::ForeignFn { library, symbol, .. } => {
                         let mut args_clone = Vec::new();
                         for arg in &new_args {
-                            let values = arg.borrow().clone().into_values();
+                            let values = arg.borrow().as_values();
                             for v in values {
                                 args_clone.push(v.borrow().clone());
                             }
@@ -306,6 +307,21 @@ impl Interpreter {
 
                     _ => panic!(">//< I don't know how to preform '{}'!", op)
                 }))
+            },
+
+            Expr::UnaryOp { left, op } => {
+                // make a copy here because we don't want to mess with the original,
+                // as unaryops don't modify the original data
+                let value: Value = Self::expr(ctx.clone(), *left).borrow().clone();
+
+                return Rc::new(RefCell::new(
+                    match &*op {
+                        "!" => Value::Bool(!value.truthiness()),  // invert truthiness
+                        "!!" => todo!("implement !!"),
+                        "typeof" => todo!("implement typeof"),
+                        _ => unimplemented!("idk what {} is in unary ops", op)
+                    }
+                ))
             },
 
             Expr::Ref(inner_expr) => {
@@ -573,12 +589,35 @@ impl Interpreter {
     /// The control flow of the statement as `StatementControl`
     pub fn stmt(ctx: Rc<RefCell<Context>>, stmt: Statement) -> StatementControl {
         match stmt {
-            // TODO: fix that one bug mentioned in `object.rs`
             Statement::Assign { left, right } => {
                 let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *left);
                 let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
 
                 *var.borrow_mut() = lit.borrow().clone();  // here
+                return StatementControl::Default
+            },
+
+            Statement::AssignOp { left, right, op } => {
+                // TODO: maybe do something here idk
+                let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), left);
+                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), right);
+                let v: std::cell::RefMut<'_, Value> = var.borrow_mut();
+                let x: std::cell::Ref<'_, Value> = lit.borrow();
+
+                match &*op {
+                    "+=" => Self::handle_add_assign(v, x),
+                    "-=" => Self::handle_sub_assign(v, x),
+                    "*=" => todo!("implement *="),
+                    "/=" => todo!("implement /="),
+                    "%=" => todo!("implement %="),
+
+                    "||=" => todo!("implement ||="),
+                    "&&=" => todo!("implement &&="),
+                    "^^=" => todo!("implement ^^="),
+                    "<<=" => todo!("implement <<="),
+                    ">>=" => todo!("implement >>="),
+                    _ => panic!("unknown op {}", op)
+                }
                 return StatementControl::Default
             },
             
@@ -672,7 +711,7 @@ impl Interpreter {
                 return StatementControl::Default;
             },
 
-            Statement::BadIdea { address, value } => {
+            Statement::Memcopy { address, value } => {
                 let a = Self::expr(ctx.clone(), address);
                 let addr = a.borrow().as_usize();
                 let v = Self::expr(ctx.clone(), value);

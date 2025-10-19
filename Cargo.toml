@@ -1,12 +1,15 @@
 [package]
 name = "ospl"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "the (UNFINISHED!!!) OSPL programming language"
 authors = ["Oscar Langlois <ocyalt4@gmail,com>", "Colton Wollinger <cwoll1home@gmail.com>"]
 homepage = "https://ospl-lang.github.io"
 readme = "README.md"
+
+[features]
+pool_allocation = []
 
 [dependencies]
 libloading = "0.8"

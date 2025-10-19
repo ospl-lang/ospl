@@ -13,6 +13,8 @@ fn use_this_as_main_temporarily_if_you_use_vscode_debugger() {
 }
 
 fn main() {
+    //custom_allocator::print_allocator_information();
+
     // no clap or anything because I hate myself
     let arg: Vec<String> = args().collect();
     let cmd = &arg.get(1).expect("please specify a command on the command line!");

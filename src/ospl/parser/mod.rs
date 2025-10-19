@@ -747,6 +747,11 @@ impl Parser {
             return Some(s)
         }
 
+        // ==== ASSIGN OPS ====
+        else if let Some(assign_op) = self.attempt(Self::assign_op) {
+            return Some(assign_op)
+        }
+
         // a last ditch effort, try a bare expression
         else if let Some(s) = self.attempt(Self::expr) {
             return Some(
@@ -756,6 +761,23 @@ impl Parser {
 
         // we don't know
         return None;
+    }
+
+    fn assign_op(&mut self) -> Option<Statement> {
+        let left = self.expr()?;
+        self.skip_ws();
+
+        let Some(op) = self.find_peek_or_consume(vec!["+=", "-=", "*=", "/=", "||=", "&&=", "^^=", "!!="])
+            else { return None };
+
+        let right = self.expr()
+            .unwrap_or_else(|| self.parse_error("expected right-hand side after assign operator"));
+
+        return Some(
+            Statement::AssignOp {
+                left, right, op
+            }
+        )
     }
 }
 

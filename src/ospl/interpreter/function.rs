@@ -114,7 +114,7 @@ impl Interpreter {
                 Subspec::Destruct(tree) => Self::destruct_into(
                     ctx.clone(),
                     tree,
-                        args.next().ok_or(DestructionError::NotEnoughArgs)?.borrow().clone().into_values()
+                        args.next().ok_or(DestructionError::NotEnoughArgs)?.borrow().as_values()
                 )?,
 
                 Subspec::LiteralRequirement(v) => {

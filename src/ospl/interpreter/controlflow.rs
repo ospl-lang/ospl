@@ -55,7 +55,7 @@ impl Interpreter {
             );
 
             // try to destruct into this new context
-            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().clone().into_values()) {
+            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().as_values()) {
                 // if it's successful then run this block
                 for stmt in ex.0 {
                     let ctrl = Self::stmt(newctx.clone(), stmt);
@@ -94,7 +94,7 @@ impl Interpreter {
 
         'outer: for (spec, ex) in cases {
             // try to destruct into this new context
-            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().clone().into_values()) {
+            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().as_values()) {
                 // if it's successful then run this block
                 for stmt in ex.0 {
                     let ctrl = Self::stmt(newctx.clone(), stmt);

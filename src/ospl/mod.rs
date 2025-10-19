@@ -146,6 +146,22 @@ impl Value {
         }
     }
 
+    pub fn as_values(&self) -> Vec<Rc<RefCell<Value>>> {
+        match &self {
+            Self::Tuple(vals_rc) => {
+                // borrow the Vec<Rc<RefCell<Value>>> and clone the Rc's (cheap)
+                vals_rc.clone()
+            }
+
+            Self::Mixmap { ordered, .. } => {
+                // borrow the Vec<Rc<RefCell<Value>>> and clone the Rc's (cheap)
+                ordered.clone()
+            }
+
+            _ => vec![Rc::new(RefCell::new(self.to_owned()))],
+        }
+    }
+
     pub fn into_id(&self) -> String {
         return match self {
             Self::String(s) => s.to_string(),
@@ -337,11 +353,17 @@ pub mod value_traits;
 // statements
 ///////////////////////////////////////////////////////////////////////////////
 
+// TODO: remove all these uneeded Box<Expr>
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign {
         left: Box<Expr>,
         right: Box<Expr>,
+    },
+    AssignOp {
+        left: Expr,
+        right: Expr,
+        op: String
     },
     Delete {
         left: Box<Expr>,
@@ -385,7 +407,7 @@ pub enum Statement {
         path: String,
     },
 
-    BadIdea {
+    Memcopy {
         address: Expr,
         value: Expr,
     }
@@ -407,6 +429,10 @@ pub enum Expr {
     BinaryOp {
         left: Box<Expr>,
         right: Box<Expr>,
+        op: String
+    },
+    UnaryOp {
+        left: Box<Expr>,
         op: String
     },
     Deref(Box<Expr>),

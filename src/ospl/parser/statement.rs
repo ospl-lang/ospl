@@ -215,7 +215,7 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("expected valid expression for value"));
 
         return Some(
-            Statement::BadIdea {
+            Statement::Memcopy {
                 address,
                 value
             }

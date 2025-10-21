@@ -1,5 +1,5 @@
 use std::{fs::File, io::Read};
-use crate::{Statement};
+use crate::ospl::SpannedStatement;
 
 use super::Parser;
 
@@ -14,7 +14,7 @@ impl Parser {
         }
     }
 
-    pub fn process_preprocessor_directive(&mut self, ast: &mut Vec<Statement>) -> bool {
+    pub fn process_preprocessor_directive(&mut self, ast: &mut Vec<SpannedStatement>) -> bool {
         // try usefile
         if let Some(b) = self.attempt(Self::includefile_directive) {
             ast.extend(b);
@@ -24,7 +24,7 @@ impl Parser {
         return false
     }
 
-    pub fn includefile_directive(&mut self) -> Option<Vec<Statement>> {
+    pub fn includefile_directive(&mut self) -> Option<Vec<SpannedStatement>> {
         if !self.match_next("includefile ") {
             return None
         }
@@ -34,7 +34,7 @@ impl Parser {
             .expect("invalid file path");
 
         // This is VERY FUCKING DANGEROUS... too bad!
-        let mut file = File::open(path)
+        let mut file = File::open(&path)
             .expect("failed to include file (failed to open it, does the file exist?)");
 
         // read our file
@@ -43,7 +43,7 @@ impl Parser {
             .expect("failed to read file");
 
         // parse our new file
-        let mut include_parser = Parser::new();
+        let mut include_parser = Parser::new(&path);
         include_parser.feed(&buffer);
 
         let stmts = include_parser.module_root_stmts()

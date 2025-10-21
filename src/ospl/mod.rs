@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, rc::{Rc, Weak}
+    cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}
 };
 
 use crate::Context;
@@ -349,9 +349,26 @@ impl Value {
 
 pub mod value_traits;
 
-///////////////////////////////////////////////////////////////////////////////
+//.////////////////////////////////////////////////////////////////////////////
 // statements
-///////////////////////////////////////////////////////////////////////////////
+//.////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct SpannedStatement {
+    filename: Rc<str>,  // memory space
+    line: usize,
+    stmt: Statement
+}
+
+impl SpannedStatement {
+    pub fn new(line: usize, stmt: Statement, file: Rc<str>) -> SpannedStatement {
+        return Self {
+            line,
+            stmt,
+            filename: file
+        }
+    }
+}
 
 // TODO: remove all these uneeded Box<Expr>
 #[derive(Debug, Clone)]
@@ -449,7 +466,10 @@ pub enum Expr {
         spec: Vec<Subspec>,
         body: Block,
     },
-    Import(Vec<Statement>),
+    Import {
+        ast: Vec<SpannedStatement>,
+        filename: PathBuf,
+    },
 
     TypeCast {
         left: Box<Expr>,
@@ -527,4 +547,6 @@ impl Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
-pub struct Block(pub Vec<Statement>);
+pub struct Block {
+    pub stmts: Vec<SpannedStatement>,
+}

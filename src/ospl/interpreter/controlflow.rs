@@ -17,7 +17,7 @@ impl Interpreter {
         body: Block
     ) -> StatementControl {
         'outer: loop {
-            for stmt in &body.0 {   // iterate by reference to avoid cloning
+            for stmt in &body.stmts {   // iterate by reference to avoid cloning
                 let result = Self::stmt(ctx.clone(), stmt.clone());
                 match result {
                     StatementControl::Break => return result,
@@ -57,7 +57,7 @@ impl Interpreter {
             // try to destruct into this new context
             if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().as_values()) {
                 // if it's successful then run this block
-                for stmt in ex.0 {
+                for stmt in ex.stmts {
                     let ctrl = Self::stmt(newctx.clone(), stmt);
                     match ctrl {
                         StatementControl::Break => break 'outer,
@@ -96,7 +96,7 @@ impl Interpreter {
             // try to destruct into this new context
             if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().as_values()) {
                 // if it's successful then run this block
-                for stmt in ex.0 {
+                for stmt in ex.stmts {
                     let ctrl = Self::stmt(newctx.clone(), stmt);
                     match ctrl {
                         StatementControl::Break => break 'outer,

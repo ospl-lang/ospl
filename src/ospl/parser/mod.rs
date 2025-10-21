@@ -2,12 +2,10 @@ use crate::{ospl::{
     interpreter::{
         Context,
         Interpreter
-    },
-    Expr,
-    Value
+    }, Expr, SpannedStatement, Value
 }, Block, Statement};
 
-use std::{cell::RefCell, fs::File, io::Read};
+use std::{cell::RefCell, fs::File, io::Read, path::PathBuf};
 use std::rc::Rc;
 
 pub mod spec;
@@ -20,13 +18,17 @@ pub mod types;
 pub struct Parser {
     input: String, // owned buffer
     pos: usize,    // current cursor
+    lineno: usize, // current line (updated uhh... when it is...)
+    filename: Rc<str>,  // current file
 }
 
 impl Parser {
-    pub fn new() -> Self {
+    pub fn new(filename: &str) -> Self {
         Self {
             input: String::new(),
             pos: 0,
+            lineno: 0,
+            filename: Rc::from(filename)
         }
     }
 
@@ -52,6 +54,11 @@ impl Parser {
             .unwrap_or('\0');  // string terminator
             // .unwrap_or_else(|| self.parse_error("unexpected EOF in peek_or_consume"));
 
+        // I don't want this, but I need to do it...
+        if c == '\n' {
+            self.lineno += 1;
+        }
+
         if c == target {
             self.pos += c.len_utf8();
             return true
@@ -66,6 +73,11 @@ impl Parser {
     {
         let start = self.pos;
         while let Some(c) = self.peek() {
+            // newline check
+            if c == '\n' {
+                self.lineno += 1;
+            }
+
             if f(c) {
                 self.next_char();
             } else {
@@ -113,6 +125,7 @@ syntax or parse error at char {} ({}): {}
     }
 
     fn match_next(&mut self, thing: &str) -> bool {
+        self.lineno += thing.chars().filter(|&c| c == '\n').count();  // man I really don't wanna do this...
         if self.input[self.pos..].starts_with(thing) {
             self.pos += thing.len();
             return true
@@ -124,25 +137,29 @@ syntax or parse error at char {} ({}): {}
     #[allow(dead_code)]  // turn dead code off here, as I know it'll be used later
     fn find(&mut self, things: Vec<&str>) -> Option<String> {
         for thing in things {
+            self.lineno += thing.chars().filter(|&c| c == '\n').count();  // TODO: check if this shit fucking works or not?
             if self.input[self.pos..].starts_with(thing) {
                 self.pos += thing.len();  // <- consume the operator!
                 return Some(thing.to_string());
             }
         }
-        None
+        return None
     }
 
     fn find_peek(&mut self, things: Vec<&str>) -> Option<String> {
         for thing in things {
+            self.lineno += thing.chars().filter(|&c| c == '\n').count();  // count newlines
+
             if self.input[self.pos..].starts_with(thing) {
                 // no consuming
                 return Some(thing.to_string());
             }
         }
-        return None;
+        return None
     }
 
     fn find_peek_or_consume(&mut self, things: Vec<&str>) -> Option<String> {
+        // no newline check cuz the thing calls the other thing and that other thing does the check
         if let Some(x) = self.find_peek(things) {
             self.pos += x.len();
             return Some(x)
@@ -158,12 +175,15 @@ syntax or parse error at char {} ({}): {}
             // endl comments
             if self.peek_or_consume('#') {
                 self.consume_while(|c| c != '\n');
+                self.lineno += 1;
             }
 
             // multiline comments
             else if self.match_next("*****") {
                 while !self.match_next("*****") {
-                    self.next_char();
+                    if let Some('\n') = self.next_char() {
+                        self.lineno += 1;
+                    }
                 }
             }
 
@@ -182,12 +202,16 @@ impl Parser {
 
         let stmts = self.stmts()?;
 
-        return Some(Block(stmts));
+        return Some(
+            Block {
+                stmts,
+            }
+        );
     }
 
-    fn stmts(&mut self) -> Option<Vec<Statement>> {
+    fn stmts(&mut self) -> Option<Vec<SpannedStatement>> {
         self.expect_char('{')?;
-        let mut stmts: Vec<Statement> = Vec::new();
+        let mut stmts: Vec<SpannedStatement> = Vec::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -219,8 +243,8 @@ impl Parser {
         return Some(stmts)
     }
     
-    pub fn module_root_stmts(&mut self) -> Option<Vec<Statement>> {
-        let mut stmts: Vec<Statement> = Vec::new();
+    pub fn module_root_stmts(&mut self) -> Option<Vec<SpannedStatement>> {
+        let mut stmts: Vec<SpannedStatement> = Vec::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -365,7 +389,7 @@ impl Parser {
                 .expect("expected (raw) string literal for file path")
                 .into_id();
 
-            let mut f = File::open(path)
+            let mut f = File::open(&path)
                 .expect("failed to open file");
 
             let mut buff = String::new();
@@ -373,16 +397,17 @@ impl Parser {
                 .expect("failed to read file");
 
             // parse the file
-            let mut new_parser = Self::new();
+            let mut new_parser = Self::new(&path);
             new_parser.feed(&buff);
 
             let module_root = new_parser.module_root_stmts()
                 .expect("failed to parse module root");
 
             return Some(
-                Expr::Import(
-                    module_root
-                )
+                Expr::Import {
+                    ast: module_root,
+                    filename: PathBuf::from(path)
+                }
             );
         }
 
@@ -684,7 +709,7 @@ impl Parser {
         expr
     }
 
-    pub fn stmt(&mut self) -> Option<Statement> {
+    pub fn stmt(&mut self) -> Option<SpannedStatement> {
         self.skip_ws();
         
         // ==== ASSIGNMENT ====
@@ -755,7 +780,11 @@ impl Parser {
         // a last ditch effort, try a bare expression
         else if let Some(s) = self.attempt(Self::expr) {
             return Some(
-                Statement::Expression(s)
+                SpannedStatement::new(
+                    self.lineno,
+                    Statement::Expression(s),
+                    self.filename.clone()
+                )
             )
         }
 
@@ -763,7 +792,7 @@ impl Parser {
         return None;
     }
 
-    fn assign_op(&mut self) -> Option<Statement> {
+    fn assign_op(&mut self) -> Option<SpannedStatement> {
         let left = self.expr()?;
         self.skip_ws();
 
@@ -774,16 +803,20 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("expected right-hand side after assign operator"));
 
         return Some(
-            Statement::AssignOp {
-                left, right, op
-            }
+            SpannedStatement::new(
+                self.lineno,
+                Statement::AssignOp {
+                    left, right, op
+                },
+                self.filename.clone()
+            )
         )
     }
 }
 
 pub fn stmt(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
-    let ast = p.stmt().expect("bad AST");
+    let ast = p.stmt().expect("bad AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
     let result = Interpreter::stmt(ctx.clone(), ast);
     println!("{:#?}", result);
@@ -792,7 +825,7 @@ pub fn stmt(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 
 pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
-    let ast = p.expr().expect("bad AST");
+    let ast = p.expr().expect("bad AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
     let result = Interpreter::expr(ctx.clone(), ast);
     println!("{:#?}", result);
@@ -802,7 +835,7 @@ pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
-    let ast = p.block().expect("invalid or no AST.");
+    let ast = p.block().expect("invalid or no AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
     // println!("ast: {:#?}", &ast);
@@ -815,12 +848,17 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
-    let ast = p.module_root_stmts().expect("invalid or no AST.");
+    let ast = p.module_root_stmts().expect("invalid or no AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
     // println!("ast: {:#?}", &ast);
 
-    let _ = Interpreter::block(ctx.clone(), Block(ast));
+    let _ = Interpreter::block(
+        ctx.clone(),
+        Block {
+            stmts: ast,
+        }
+    );
     /* println!("{:#?}", result);
     println!("{:#?}", ctx); */
 }

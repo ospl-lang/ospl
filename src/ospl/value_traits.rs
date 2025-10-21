@@ -5,8 +5,7 @@ use std::{fmt::Display, ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Div, Mul, S
 
 macro_rules! typical_op {
     ($lhs:expr, $rhs:expr, $op:tt) => {{
-        // THIS IS NOT A PRETTY MATCH STATEMENT BUT IT WILL BE A MATCH
-        // STATEMENT.
+        // THIS IS NOT A PRETTY MATCH STATEMENT BUT IT WILL BE A MATCH STATEMENT.
         match ($lhs, $rhs) {
             // integer types
             (Value::Byte(a), Value::Byte(b))                                => Value::Byte(a $op b),

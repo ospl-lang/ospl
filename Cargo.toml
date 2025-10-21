@@ -8,9 +8,6 @@ authors = ["Oscar Langlois <ocyalt4@gmail,com>", "Colton Wollinger <cwoll1home@g
 homepage = "https://ospl-lang.github.io"
 readme = "README.md"
 
-[features]
-pool_allocation = []
-
 [dependencies]
 libloading = "0.8"
 libffi = "4.1"

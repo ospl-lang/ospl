@@ -1,10 +1,10 @@
 use super::Parser;
 use crate::{
-    Block, Expr, Statement, Value
+    ospl::SpannedStatement, Block, Expr, Statement, Value
 };
 
 impl Parser {
-    pub fn print(&mut self) -> Option<Statement> {
+    pub fn print(&mut self) -> Option<SpannedStatement> {
         self.skip_ws();
         if !self.match_next("print ") {
             return None
@@ -13,34 +13,37 @@ impl Parser {
         self.skip_ws();
         let ex: Expr = self.expr()?;
 
-        return Some(Statement::Print {
-            thing: Box::new(ex)
-        });
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Print {
+                    thing: Box::new(ex)
+                },
+                self.filename.clone()
+            )
+        )
     }
 
-    pub fn assignment(&mut self) -> Option<Statement> {
+    pub fn assignment(&mut self) -> Option<SpannedStatement> {
         let id = self.expr()?;
         self.skip_ws();
         self.expect_char('=')?;
         self.skip_ws();
         let rhs: Expr = self.expr()?;
 
-        return Some(Statement::Assign {
-            left: Box::new(
-                /* Expr::Variable(
-                    Box::new(
-                        Expr::Literal(
-                            Value::String(id)
-                        )
-                    )
-                ) */
-               id
-            ),
-            right: Box::new(rhs)
-        });
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Assign {
+                    left: Box::new(id),
+                    right: Box::new(rhs)
+                },
+                self.filename.clone()
+            )
+        )
     }
 
-    pub fn declaration(&mut self) -> Option<Statement> {
+    pub fn declaration(&mut self) -> Option<SpannedStatement> {
         // all declarations start with def, if it doesn't,
         // this clearly isn't a declaration.
         // use a space here because it's a keyword
@@ -65,24 +68,30 @@ impl Parser {
         }
 
         // construct a statement
-        return Some(Statement::Declaration {
-            left: Box::new(
-                Expr::Literal(
-                    Value::String(id)
-                )
-            ),
-            right: Box::new(
-                initializer
-                .unwrap_or_else(||  // avoid unneeded work
-                    Expr::Literal(
-                        Value::Null
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Declaration {
+                    left: Box::new(
+                        Expr::Literal(
+                            Value::String(id)
+                        )
+                    ),
+                    right: Box::new(
+                        initializer
+                        .unwrap_or_else(||  // avoid unneeded work
+                            Expr::Literal(
+                                Value::Null
+                            )
+                        )
                     )
-                )
+                },
+                self.filename.clone()
             )
-        })
+        )
     }
 
-    pub fn return_statement(&mut self) -> Option<Statement> {
+    pub fn return_statement(&mut self) -> Option<SpannedStatement> {
         // use "return " instead of "return" because it's a keyword
         if !self.match_next("return ") {
             return None
@@ -90,29 +99,45 @@ impl Parser {
 
         self.skip_ws();
         let ret: Expr = self.expr()?;
-        return Some(Statement::Return(ret));
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Return(ret),
+                self.filename.clone()
+            )
+        )
     }
 
-    pub fn break_statement(&mut self) -> Option<Statement> {
+    pub fn break_statement(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("break") {
             return None
         }
 
         return Some(
-            Statement::Break
-        );
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Break,
+                self.filename.clone()
+            )
+        )
     }
 
-    pub fn continue_statement(&mut self) -> Option<Statement> {
+    pub fn continue_statement(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("continue") {
             return None
         }
 
         self.skip_ws();
-        return Some(Statement::Continue);
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Continue,
+                self.filename.clone()
+            )
+        )
     }
 
-    pub fn if_statement(&mut self) -> Option<Statement> {
+    pub fn if_statement(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("if ") {
             return None
         }
@@ -134,9 +159,9 @@ impl Parser {
 
             // single ones style
             else if let Some(single_style) = self.attempt(Self::stmt) {
-                Block(
-                    vec![single_style]
-                )
+                Block {
+                    stmts: vec![single_style],
+                }
             }
             
             // oops the person is stoopid
@@ -148,11 +173,17 @@ impl Parser {
         self.skip_ws();
         let on_false: Option<Block> = self.else_statement();
 
-        return Some(Statement::If {
-            condition,
-            on_true,
-            on_false
-        })
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::If {
+                    condition,
+                    on_true,
+                    on_false
+                },
+                self.filename.clone()
+            )
+        )
     }
 
     pub fn else_statement(&mut self) -> Option<Block> {
@@ -170,9 +201,9 @@ impl Parser {
         // or with a single statement, like `else print "hi"`
         else if let Some(stmt_way) = self.attempt(Self::stmt) {
             return Some(
-                Block(
-                    vec![stmt_way]
-                )
+                Block {
+                    stmts: vec![stmt_way],
+                }
             )
         }
 
@@ -180,7 +211,7 @@ impl Parser {
         self.parse_error("invalid else clause");
     }
 
-    pub fn import_lib(&mut self) -> Option<Statement> {
+    pub fn import_lib(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("import ") {
             return None;
         }
@@ -195,10 +226,19 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("expected library path as raw string"));
         let lib_path = lib_path_value.into_id();
 
-        Some(Statement::ImportLib { name: lib_name, path: lib_path })
+        return Some(
+            SpannedStatement::new(
+                self.lineno,
+                Statement::ImportLib {
+                    name: lib_name,
+                    path: lib_path
+                },
+                self.filename.clone()
+            )
+        )
     }
 
-    pub fn bad_idea(&mut self) -> Option<Statement> {
+    pub fn bad_idea(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("OSPL_memcpy ") {
             return None;
         }
@@ -215,10 +255,14 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("expected valid expression for value"));
 
         return Some(
-            Statement::Memcopy {
-                address,
-                value
-            }
-        );
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Memcopy {
+                    address,
+                    value
+                },
+                self.filename.clone()
+            ),
+        )
     }
 }

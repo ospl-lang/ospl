@@ -24,9 +24,9 @@ impl Interpreter {
         spec: Vec<Subspec>,
         arg_list: Vec<Rc<RefCell<Value>>>
     ) -> Result<(), DestructionError> {
-        // fucking retarded whores over at The Rust Foundation don't make it
-        // easy to iterate in this very common situation, so we gotta do this
-        // retarded shit.
+        // TODO: make this error() too...
+        // can be done by putting the last executed `SpannedStatement` into Context, although I particularly don't like that strategy... or make `Interpreter` store it...
+        // or just pass it into the function, whatever works... or just never do this one
         let mut args = arg_list.into_iter();
 
         for subspec in spec.into_iter() {

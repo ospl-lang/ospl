@@ -19,8 +19,25 @@ pub struct Interpreter;
 pub mod function;
 pub mod controlflow;
 pub mod assignop;
-
 impl Interpreter {
+    // TODO: optimize this ugly shit
+    pub fn error(span: &SpannedStatement, msg: &str) {
+        // get the file content
+        let file_data = std::fs::read_to_string(&*span.filename)
+            .expect("failed to read erroring file's content (yes, the error reporting just error'd...)");
+
+        let error_context = file_data.lines().nth(span.line)
+            .expect("the error handling code error'd lmao");  // TODO: write a proper error
+
+        panic!(
+            "{}, line {}: {}\n{}",
+            &*span.filename,
+            span.line,
+            msg,
+            error_context
+        )
+    }
+
     fn solve_for_avbk(
         ctx: &Rc<RefCell<Context>>,
         a: Box<Expr>,
@@ -42,7 +59,7 @@ impl Interpreter {
     }
 
     fn execute_if_body(body: Block, newctx: Rc<RefCell<Context>>) -> Option<StatementControl> {
-        for stmt in body.0 {
+        for stmt in body.stmts {
             match Self::stmt(newctx.clone(), stmt) {
                 StatementControl::Default => {}
                 ctrl => return Some(ctrl)
@@ -51,6 +68,7 @@ impl Interpreter {
         None
     }
 
+    // TODO: span Expr too
     fn property_access(ctx: Rc<RefCell<Context>>, a: Box<Expr>, b: Box<Expr>) -> Rc<RefCell<Value>> {
         let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
 
@@ -416,7 +434,7 @@ impl Interpreter {
                 )
             },
 
-            Expr::Import(ast) => {
+            Expr::Import { ast, .. } => {
                 // create a new context for this module
                 let newctx =
                     Rc::new(
@@ -582,13 +600,13 @@ impl Interpreter {
     /// 
     /// * `ctx` - The context in which to execute the statement.
     ///           This context is mutated.
-    /// * `stmt` - The `Statement` to execute.
+    /// * `stmt` - The `SpannedStatement` to execute.
     /// 
     /// # Returns
     /// 
     /// The control flow of the statement as `StatementControl`
-    pub fn stmt(ctx: Rc<RefCell<Context>>, stmt: Statement) -> StatementControl {
-        match stmt {
+    pub fn stmt(ctx: Rc<RefCell<Context>>, span: SpannedStatement) -> StatementControl {
+        match span.stmt {
             Statement::Assign { left, right } => {
                 let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *left);
                 let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
@@ -597,26 +615,26 @@ impl Interpreter {
                 return StatementControl::Default
             },
 
-            Statement::AssignOp { left, right, op } => {
+            Statement::AssignOp { left, right, ref op } => {
                 // TODO: maybe do something here idk
                 let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), left);
                 let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), right);
                 let v: std::cell::RefMut<'_, Value> = var.borrow_mut();
                 let x: std::cell::Ref<'_, Value> = lit.borrow();
 
-                match &*op {
+                match &**op {
                     "+=" => Self::handle_add_assign(v, x),
                     "-=" => Self::handle_sub_assign(v, x),
-                    "*=" => todo!("implement *="),
-                    "/=" => todo!("implement /="),
-                    "%=" => todo!("implement %="),
+                    "*=" => Self::error(&span, "TODO: implement"),
+                    "/=" => Self::error(&span, "TODO: implement"),
+                    "%=" =>Self::error(&span, "TODO: implement"),
 
-                    "||=" => todo!("implement ||="),
-                    "&&=" => todo!("implement &&="),
-                    "^^=" => todo!("implement ^^="),
-                    "<<=" => todo!("implement <<="),
-                    ">>=" => todo!("implement >>="),
-                    _ => panic!("unknown op {}", op)
+                    "||=" => Self::error(&span, "TODO: implement"),
+                    "&&=" => Self::error(&span, "TODO: implement"),
+                    "^^=" => Self::error(&span, "TODO: implement"),
+                    "<<=" => Self::error(&span, "TODO: implement"),
+                    ">>=" => Self::error(&span, "TODO: implement"),
+                    _ => Self::error(&span, "unknown operation")
                 }
                 return StatementControl::Default
             },
@@ -735,7 +753,7 @@ impl Interpreter {
     /// 
     /// The return of this block, if there is one, as `Option<Value>`
     pub fn block(ctx: Rc<RefCell<Context>>, body: Block) -> Option<Rc<RefCell<Value>>> {
-        for stmt in body.0 {
+        for stmt in body.stmts {
             let control: StatementControl = Self::stmt(ctx.clone(), stmt);
             match control {
                 StatementControl::EarlyReturn(x) => return Some(Rc::new(RefCell::new(x))),

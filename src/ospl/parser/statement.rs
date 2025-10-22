@@ -1,6 +1,6 @@
 use super::Parser;
 use crate::{
-    ospl::SpannedStatement, Block, Expr, Statement, Value
+    ospl::SpannedStatement, Block, Expr, SpannedExpr, Statement, Value
 };
 
 impl Parser {
@@ -11,7 +11,7 @@ impl Parser {
         }
 
         self.skip_ws();
-        let ex: Expr = self.expr()?;
+        let ex = self.expr()?;
 
         return Some(
             SpannedStatement::new(
@@ -29,7 +29,7 @@ impl Parser {
         self.skip_ws();
         self.expect_char('=')?;
         self.skip_ws();
-        let rhs: Expr = self.expr()?;
+        let rhs = self.expr()?;
 
         return Some(
             SpannedStatement::new(
@@ -57,7 +57,7 @@ impl Parser {
         self.skip_ws();
 
         // and an optional assignment
-        let mut initializer: Option<Expr> = None;
+        let mut initializer: Option<SpannedExpr> = None;
         if self.peek_or_consume('=') {
             self.skip_ws();
             initializer = Some(
@@ -72,16 +72,20 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Declaration {  // ehsy?
-                    left: Expr::Literal(
-                        Value::String(id)
+                    left: self.new_spanned_expr(
+                        Expr::Literal(
+                            Value::String(id)
+                        )
                     ),
 
                     // ehsy is this fucking formatting bro?
                     right:
                         initializer
                         .unwrap_or_else(||  // avoid unneeded work
-                            Expr::Literal(
-                                Value::Null
+                            self.new_spanned_expr(
+                                Expr::Literal(
+                                    Value::Null
+                                )
                             )
                         )
                 },
@@ -97,7 +101,7 @@ impl Parser {
         }
 
         self.skip_ws();
-        let ret: Expr = self.expr()?;
+        let ret = self.expr()?;
         return Some(
             SpannedStatement::new(
                 self.lineno,
@@ -143,7 +147,7 @@ impl Parser {
         
         // followed by condition
         self.skip_ws();
-        let condition: Expr = self.expr()
+        let condition = self.expr()
             .unwrap_or_else(|| self.parse_error("if statement requires condition"));
 
         // followed by on true block

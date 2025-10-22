@@ -21,7 +21,7 @@ pub mod controlflow;
 pub mod assignop;
 impl Interpreter {
     // TODO: optimize this ugly shit
-    pub fn error(span: &SpannedStatement, msg: &str) {
+    pub fn error_stmt(span: &SpannedStatement, msg: &str) -> ! {
         // get the file content
         let file_data = std::fs::read_to_string(&*span.filename)
             .expect("failed to read erroring file's content (yes, the error reporting just error'd...)");
@@ -38,10 +38,28 @@ impl Interpreter {
         )
     }
 
+    pub fn error_expr(span: &SpannedExpr, msg: &str) -> ! {
+        // get the file content
+        let file_data = std::fs::read_to_string(&*span.filename)
+            .expect("failed to read erroring file's content (yes, the error reporting just error'd...)");
+
+        let error_context = file_data.lines().nth(span.line)
+            .expect("the error handling code error'd lmao");  // TODO: write a proper error
+
+        panic!(
+            "{}, position {}:{}: {}\n{}",
+            &*span.filename,
+            span.line,
+            span.column,
+            msg,
+            error_context
+        )
+    }
+
     fn solve_for_avbk(
         ctx: &Rc<RefCell<Context>>,
-        a: &Expr,
-        b: &Expr,
+        a: &SpannedExpr,
+        b: &SpannedExpr,
     ) -> (Rc<RefCell<Value>>, String) {
         // Resolve a_value (av)
         let a_value: Rc<RefCell<Value>> = Self::expr(ctx.clone(), a);
@@ -69,7 +87,7 @@ impl Interpreter {
     }
 
     // TODO: span Expr too
-    fn property_access(ctx: Rc<RefCell<Context>>, a: &Expr, b: &Expr) -> Rc<RefCell<Value>> {
+    fn property_access(ctx: Rc<RefCell<Context>>, a: &SpannedExpr, b: &SpannedExpr) -> Rc<RefCell<Value>> {
         let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
 
         match &*a_value.borrow() {
@@ -218,8 +236,8 @@ impl Interpreter {
     /// # Returns
     /// 
     /// The value of this Expr, as `Value`
-    pub fn expr(ctx: Rc<RefCell<Context>>, expr: &Expr) -> Rc<RefCell<Value>> {
-        return match expr {
+    pub fn expr(ctx: Rc<RefCell<Context>>, expr: &SpannedExpr) -> Rc<RefCell<Value>> {
+        return match &expr.expr {
             // if it's a literal we can just unwrap the inner value
             Expr::Literal(v) => Rc::new(RefCell::new(v.clone())),
 
@@ -241,11 +259,11 @@ impl Interpreter {
                 }
             }
 
-            Expr::Property(a, b) => Self::property_access(ctx, a, b),
+            Expr::Property(a, b) => Self::property_access(ctx, &*a, &*b),
 
             // if it's a function call, we go and handle that
             Expr::FunctionCall { left, args } => {
-                let function = Self::expr(ctx.clone(), left);
+                let function = Self::expr(ctx.clone(), &*left);
                 let new_args: Vec<Rc<RefCell<Value>>> = args
                     .iter()
                     .map(|arg| Self::expr(ctx.clone(), arg).clone())
@@ -290,8 +308,8 @@ impl Interpreter {
 
                 // make a copy here because we don't want to mess with the original,
                 // as binaryops don't modify the original data
-                let lvalue: Value = Self::expr(ctx.clone(), left).borrow().clone();
-                let rvalue: Value = Self::expr(ctx.clone(), right).borrow().clone();
+                let lvalue: Value = Self::expr(ctx.clone(), &*left).borrow().clone();
+                let rvalue: Value = Self::expr(ctx.clone(), &*right).borrow().clone();
 
                 // dispatch the correct op
                 return Rc::new(RefCell::new(match op.as_str() {
@@ -323,14 +341,14 @@ impl Interpreter {
                     ">>" => lvalue >> rvalue,
                     "<<" => lvalue << rvalue,
 
-                    _ => panic!(">//< I don't know how to preform '{}'!", op)
+                    _ => Self::error_expr(expr, "I don't know how to preform '{}'!")
                 }))
             },
 
             Expr::UnaryOp { left, op } => {
                 // make a copy here because we don't want to mess with the original,
                 // as unaryops don't modify the original data
-                let value: Value = Self::expr(ctx.clone(), left).borrow().clone();
+                let value: Value = Self::expr(ctx.clone(), &left).borrow().clone();
 
                 return Rc::new(RefCell::new(
                     match &**op {
@@ -343,12 +361,12 @@ impl Interpreter {
             },
 
             Expr::Ref(inner_expr) => {
-                let value = Self::expr(ctx.clone(), inner_expr);
+                let value = Self::expr(ctx.clone(), &*inner_expr);
                 return Rc::new(RefCell::new(Value::Ref(value)))
             },
 
             Expr::Deref(inner_expr) => {
-                let evaluated = Self::expr(ctx.clone(), inner_expr);
+                let evaluated = Self::expr(ctx.clone(), &*inner_expr);
                 let borrowed = evaluated.borrow();
 
                 match &*borrowed {
@@ -505,7 +523,7 @@ impl Interpreter {
             },
 
             Expr::CffiFn { target, arg_types, return_type } => {
-                let target_value = Self::expr(ctx.clone(), target);
+                let target_value = Self::expr(ctx.clone(), &*target);
                 let (library, symbol) = match &*target_value.borrow() {
                     Value::ForeignSymbol { library, symbol } => (library.clone(), symbol.clone()),
                     Value::ForeignFn { library, symbol, .. } => (library.clone(), symbol.clone()),
@@ -537,7 +555,7 @@ impl Interpreter {
 
             // THIS IS AWFUL
             Expr::TypeCast { left, into, mode: TypeCastMode::Convert } => {
-                let value = Self::expr(ctx.clone(), left);
+                let value = Self::expr(ctx.clone(), &*left);
                 let thing = match (&*value.borrow(), &into) {
                     // stupid
                     (Value::Byte(b), Type::String) => Value::String(String::from(*b as char)),
@@ -571,7 +589,7 @@ impl Interpreter {
 
             Expr::TypeCast { left, into, mode: TypeCastMode::PointerReinterpret } => {
                 unsafe {
-                    let value = Self::expr(ctx.clone(), left);
+                    let value = Self::expr(ctx.clone(), &*left);
 
                     let thing = match (&*value.borrow(), &into) {
                         // quadruple word is a ptr
@@ -589,7 +607,7 @@ impl Interpreter {
             },
 
             Expr::DeepCopy(of) => {
-                let value = Self::expr(ctx.clone(), of);
+                let value = Self::expr(ctx.clone(), &*of);
                 return Rc::new(
                     RefCell::new(
                         value.borrow().deep_clone()
@@ -630,16 +648,16 @@ impl Interpreter {
                 match &**op {
                     "+=" => Self::handle_add_assign(v, x),
                     "-=" => Self::handle_sub_assign(v, x),
-                    "*=" => Self::error(&span, "TODO: implement"),
-                    "/=" => Self::error(&span, "TODO: implement"),
-                    "%=" =>Self::error(&span, "TODO: implement"),
+                    "*=" => Self::error_stmt(&span, "TODO: implement"),
+                    "/=" => Self::error_stmt(&span, "TODO: implement"),
+                    "%=" =>Self::error_stmt(&span, "TODO: implement"),
 
-                    "||=" => Self::error(&span, "TODO: implement"),
-                    "&&=" => Self::error(&span, "TODO: implement"),
-                    "^^=" => Self::error(&span, "TODO: implement"),
-                    "<<=" => Self::error(&span, "TODO: implement"),
-                    ">>=" => Self::error(&span, "TODO: implement"),
-                    _ => Self::error(&span, "unknown operation")
+                    "||=" => Self::error_stmt(&span, "TODO: implement"),
+                    "&&=" => Self::error_stmt(&span, "TODO: implement"),
+                    "^^=" => Self::error_stmt(&span, "TODO: implement"),
+                    "<<=" => Self::error_stmt(&span, "TODO: implement"),
+                    ">>=" => Self::error_stmt(&span, "TODO: implement"),
+                    _ => Self::error_stmt(&span, "unknown operation")
                 }
                 return StatementControl::Default
             },
@@ -724,7 +742,7 @@ impl Interpreter {
             Statement::ImportLib { name, path } => {
                 match ctx.borrow_mut().ffi_registry.load_library(name.clone(), &path) {
                     Ok(_) => {},
-                    Err(e) => Self::error(
+                    Err(e) => Self::error_stmt(
                         span, 
                         &format!("Failed to load library: {}", e)  // ehsy?
                     ),

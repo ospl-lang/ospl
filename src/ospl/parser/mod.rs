@@ -3,7 +3,7 @@ use crate::{ospl::{
         Context,
         Interpreter
     }, Expr, SpannedStatement, Value
-}, Block, Statement};
+}, Block, SpannedExpr, Statement};
 
 use std::{cell::RefCell, fs::File, io::Read, path::PathBuf};
 use std::rc::Rc;
@@ -18,7 +18,10 @@ pub mod types;
 pub struct Parser {
     input: String, // owned buffer
     pos: usize,    // current cursor
-    lineno: usize, // current line (updated uhh... when it is...)
+
+    // position info
+    lineno: usize,
+    colno: usize,
     filename: Rc<str>,  // current file
 }
 
@@ -28,6 +31,7 @@ impl Parser {
             input: String::new(),
             pos: 0,
             lineno: 0,
+            colno: 0,
             filename: Rc::from(filename)
         }
     }
@@ -313,14 +317,14 @@ impl Parser {
 
     const GROUP_OPEN: &str = "[";
     const GROUP_CLOSE: &str = "]";
-    pub fn prefix_expr(&mut self) -> Option<Expr> {
+    pub fn prefix_expr(&mut self) -> Option<SpannedExpr> {
         // ==== DO THE LHS ====
-        let lhs = if self.match_next("OSPL_CFFI_Load ") {
+        let lhs: SpannedExpr = if self.match_next("OSPL_CFFI_Load ") {
             self.skip_ws();
             let path = self.raw_string_literal()
                 .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"))
                 .into_id();
-            Expr::CffiLoad { path }
+            self.new_spanned_expr(Expr::CffiLoad { path })
         }
 
         else if self.match_next(Self::OSPL_CFFI_FN_KW) {
@@ -359,11 +363,13 @@ impl Parser {
             let return_type = self.identifier()
                 .unwrap_or_else(|| self.parse_error("expected return type identifier"));
 
-            Expr::CffiFn {
-                target: Box::new(target_expr),
-                arg_types,
-                return_type,
-            }
+            self.new_spanned_expr(
+                Expr::CffiFn {
+                    target: Box::new(target_expr),
+                    arg_types,
+                    return_type,
+                }
+            )
         }
 
         else if self.match_next(Self::GROUP_OPEN) {
@@ -404,13 +410,16 @@ impl Parser {
                 .expect("failed to parse module root");
 
             return Some(
-                Expr::Import {
-                    ast: module_root,
-                    filename: PathBuf::from(path)
-                }
+                self.new_spanned_expr(
+                    Expr::Import {
+                        ast: module_root,
+                        filename: PathBuf::from(path)
+                    }
+                )
             );
         }
 
+        // what
         else if self.match_next("foreign ") {
             self.skip_ws();
 
@@ -459,32 +468,43 @@ impl Parser {
             let return_type = self.identifier()
                 .unwrap_or_else(|| self.parse_error("expected return type"));
 
-            Expr::ForeignFunctionLiteral {
-                library: lib,
-                symbol,
-                arg_types,
-                return_type,
-            }
+            self.new_spanned_expr(
+                Expr::ForeignFunctionLiteral {
+                    library: lib,
+                    symbol,
+                    arg_types,
+                    return_type,
+                }
+            )
         }
 
         else if let Some(id) = self.attempt(Self::identifier) {
             // ==== VARS ====
-            Expr::Variable(
-                Box::new(
-                    Expr::Literal(
-                        Value::String(id)
+
+            // ugly
+            self.new_spanned_expr(
+                Expr::Variable(
+                    Box::new(
+                        self.new_spanned_expr(
+                            Expr::Literal(
+                                Value::String(id)
+                            )
+                        )
                     )
                 )
             )
         }
         
+        // DRY violation speedrun any% - tied WR with that one other piece of code...
         else if self.peek_or_consume('@') {  // deref
             // whitespace is not allowed
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to deref"));
 
-            Expr::Deref(
-                Box::new(expr)
+            self.new_spanned_expr(
+                Expr::Deref(
+                    Box::new(expr)
+                )
             )
         }
         
@@ -492,13 +512,15 @@ impl Parser {
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to ref"));
 
-            Expr::Ref(
-                Box::new(expr)
+            self.new_spanned_expr(
+                Expr::Ref(
+                    Box::new(expr)
+                )
             )
         }
         
         else {
-            // WE HAVE NO IDEA WHAT THE LHS IS
+            // WE HAVE NO IDEA EHSY THE LHS IS
             return None;
         };
 
@@ -510,8 +532,8 @@ impl Parser {
 
     const PROP_ACCESS_CHAR: char = '.';
     const PROP_DYN_ACCESS_CHAR: char = ':';
-    pub fn expr(&mut self) -> Option<Expr> {
-        let mut lhs = self.prefix_expr()?;
+    pub fn expr(&mut self) -> Option<SpannedExpr> {
+        let mut lhs: SpannedExpr = self.prefix_expr()?;
 
         // ==== POSTFIX OPS ====
         loop {
@@ -523,7 +545,9 @@ impl Parser {
                 let path_literal = self.raw_string_literal()
                     .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"));
                 let path = path_literal.into_id();
-                lhs = Expr::CffiLoad { path };
+                lhs = self.new_spanned_expr(
+                    Expr::CffiLoad { path }
+                );
                 continue;
             }
 
@@ -566,11 +590,13 @@ impl Parser {
                 let return_type = self.identifier()
                     .unwrap_or_else(|| self.parse_error("expected return type identifier"));
 
-                lhs = Expr::CffiFn {
-                    target: Box::new(target_expr),
-                    arg_types,
-                    return_type,
-                };
+                lhs = self.new_spanned_expr(
+                    Expr::CffiFn {
+                        target: Box::new(target_expr),
+                        arg_types,
+                        return_type,
+                    }
+                );
                 continue;
             }
 
@@ -578,9 +604,13 @@ impl Parser {
             if self.peek_or_consume(Self::PROP_ACCESS_CHAR) {
                 self.skip_ws();
                 if let Some(ident) = self.identifier() {
-                    lhs = Expr::Property(
-                        Box::new(lhs),
-                        Box::new(Expr::Literal(Value::String(ident))),
+                    lhs = self.new_spanned_expr(
+                        Expr::Property(
+                            Box::new(lhs),
+                            Box::new(
+                                self.new_spanned_expr(Expr::Literal(Value::String(ident)))
+                            ),
+                        )
                     );
                     continue;
                 } else {
@@ -592,9 +622,11 @@ impl Parser {
             if self.peek_or_consume(Self::PROP_DYN_ACCESS_CHAR) {
                 self.skip_ws();
                 if let Some(ident) = self.expr() {  // surely that won't blow the stack...
-                    lhs = Expr::Property(
-                        Box::new(lhs),
-                        Box::new(ident),
+                    lhs = self.new_spanned_expr(
+                        Expr::Property(
+                            Box::new(lhs),
+                            Box::new(ident),
+                        )
                     );
                     continue;
                 } else {
@@ -606,11 +638,13 @@ impl Parser {
             if self.match_next("as ") {
                 let ty = self.typedef().expect("expected type def after `as` keyword");
                 return Some(
-                    Expr::TypeCast {
-                        left: Box::new(lhs),
-                        into: ty,
-                        mode: crate::TypeCastMode::Convert
-                    }
+                    self.new_spanned_expr(
+                        Expr::TypeCast {
+                            left: Box::new(lhs),
+                            into: ty,
+                            mode: crate::TypeCastMode::Convert
+                        }
+                    )
                 )
             }
 
@@ -618,11 +652,13 @@ impl Parser {
             if self.match_next("asPointerReinterpret ") {
                 let ty = self.typedef().expect("expected type def after `asPointerReinterpret` keyword");
                 return Some(
-                    Expr::TypeCast {
-                        left: Box::new(lhs),
-                        into: ty,
-                        mode: crate::TypeCastMode::PointerReinterpret
-                    }
+                    self.new_spanned_expr(
+                        Expr::TypeCast {
+                            left: Box::new(lhs),
+                            into: ty,
+                            mode: crate::TypeCastMode::PointerReinterpret
+                        }
+                    )
                 )
             }
 
@@ -642,10 +678,12 @@ impl Parser {
                         _ => break
                     }
                 }
-                lhs = Expr::FunctionCall {
-                    left: Box::new(lhs),
-                    args: fnargs,
-                };
+                lhs = self.new_spanned_expr(
+                    Expr::FunctionCall {
+                        left: Box::new(lhs),
+                        args: fnargs,
+                    }
+                );
                 continue;
             }
 
@@ -659,24 +697,40 @@ impl Parser {
             "|", "||", "&", "&&"]) {
             self.skip_ws();
             if let Some(rhs) = self.expr() {
-                lhs = Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    right: Box::new(rhs),
-                    op,
-                };
+                lhs = self.new_spanned_expr(
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        right: Box::new(rhs),
+                        op,
+                    }
+                );
             }
         }
 
         Some(lhs)
     }
 
-    fn parse_cffi_target(&mut self) -> Expr {
+
+    fn parse_cffi_target(&mut self) -> SpannedExpr {
         self.skip_ws();
 
         let base_id = self.identifier()
             .unwrap_or_else(|| self.parse_error("expected identifier for CFFI target"));
 
-        let mut expr = Expr::Variable(Expr::litstr(&base_id));
+        // weird recursion kind of thing here... ehsy?
+        let mut expr: SpannedExpr = self.new_spanned_expr(
+            Expr::Variable(
+                Box::new(
+                    self.new_spanned_expr(
+                        Expr::Literal(
+                            Value::String(
+                                base_id  // gives up ownership I think?
+                            )
+                        )
+                    )
+                )
+            )
+        );
 
         loop {
             self.skip_ws();
@@ -685,9 +739,19 @@ impl Parser {
                 self.skip_ws();
                 let ident = self.identifier()
                     .unwrap_or_else(|| self.parse_error("expected identifier after '.' in CFFI target"));
-                expr = Expr::Property(
-                    Box::new(expr),
-                    Expr::litstr(&ident),
+                expr = self.new_spanned_expr(
+                    Expr::Property(
+                        Box::new(expr),
+                        Box::new(
+                            self.new_spanned_expr(
+                                Expr::Literal(
+                                    Value::String(
+                                        ident
+                                    )
+                                )
+                            )
+                        )
+                    )
                 );
                 continue;
             }
@@ -696,9 +760,11 @@ impl Parser {
                 self.skip_ws();
                 let ident_expr = self.expr()
                     .unwrap_or_else(|| self.parse_error("expected expression after ':' in CFFI target"));
-                expr = Expr::Property(
-                    Box::new(expr),
-                    Box::new(ident_expr),
+                expr = self.new_spanned_expr(
+                    Expr::Property(
+                        Box::new(expr),
+                        Box::new(ident_expr),
+                    )
                 );
                 continue;
             }
@@ -706,7 +772,7 @@ impl Parser {
             break;
         }
 
-        expr
+        return expr
     }
 
     pub fn stmt(&mut self) -> Option<SpannedStatement> {

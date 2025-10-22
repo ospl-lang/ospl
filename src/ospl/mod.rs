@@ -374,48 +374,48 @@ impl SpannedStatement {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign {
-        left: Expr,
-        right: Expr,
+        left: SpannedExpr,
+        right: SpannedExpr,
     },
     AssignOp {
-        left: Expr,
-        right: Expr,
+        left: SpannedExpr,
+        right: SpannedExpr,
         op: String
     },
     Delete {
-        left: Box<Expr>,
+        left: SpannedExpr,
     },
     Declaration {
-        left: Expr,
-        right: Expr,
+        left: SpannedExpr,
+        right: SpannedExpr,
     },
 
-    Expression(Expr),
+    Expression(SpannedExpr),
 
     // control flow
-    Return(Expr),
+    Return(SpannedExpr),
     Break,
     Continue,
 
     Print {
-        thing: Expr
+        thing: SpannedExpr
     },
 
     // ==== CONTROL FLOW ====
     // if-else
     If {
-        condition: Expr,
+        condition: SpannedExpr,
         on_true: Block,
         on_false: Option<Block>  // you don't need an else
     },
 
     // switch
     Check {
-        matching: Box<Expr>,
+        matching: SpannedExpr,
         cases: Vec<(Vec<Subspec>, Block)>,
     },
     Select {
-        matching: Box<Expr>,
+        matching: SpannedExpr,
         cases: Vec<(Vec<Subspec>, Block)>,
     },
     Loop(Box<Block>),
@@ -425,8 +425,8 @@ pub enum Statement {
     },
 
     Memcopy {
-        address: Expr,
-        value: Expr,
+        address: SpannedExpr,
+        value: SpannedExpr,
     }
 }
 
@@ -435,32 +435,47 @@ pub enum Statement {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
+pub struct SpannedExpr {
+    expr: Expr,
+
+    line: usize,
+    column: usize,
+    filename: Rc<str>,  // save on memory space
+}
+
+impl SpannedExpr {
+    pub fn new(expr: Expr, line: usize, column: usize, file: Rc<str>) -> Self {
+        return Self { expr, line, column, filename: file }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expr {
     Literal(Value),
-    Variable(Box<Expr>),
-    Property(Box<Expr>, Box<Expr>),
+    Variable(Box<SpannedExpr>),
+    Property(Box<SpannedExpr>, Box<SpannedExpr>),
     FunctionCall {
-        left: Box<Expr>,
-        args: Vec<Expr>,
+        left: Box<SpannedExpr>,
+        args: Vec<SpannedExpr>,
     },
     BinaryOp {
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: Box<SpannedExpr>,
+        right: Box<SpannedExpr>,
         op: String
     },
     UnaryOp {
-        left: Box<Expr>,
+        left: Box<SpannedExpr>,
         op: String
     },
-    Deref(Box<Expr>),
-    Ref(Box<Expr>),
+    Deref(Box<SpannedExpr>),
+    Ref(Box<SpannedExpr>),
 
     // stupid motherfuckers that don't want to follow the rules
-    TupleLiteral(Vec<Rc<RefCell<Expr>>>),
-    ObjectLiteral(HashMap<Rc<String>, Rc<RefCell<Expr>>>),
+    TupleLiteral(Vec<Rc<RefCell<SpannedExpr>>>),
+    ObjectLiteral(HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>>),
     MixmapLiteral {
-        positional: Vec<Rc<RefCell<Expr>>>,
-        keyed: HashMap<Rc<String>, Rc<RefCell<Expr>>>
+        positional: Vec<Rc<RefCell<SpannedExpr>>>,
+        keyed: HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>>
     },
     RealFnLiteral {
         spec: Vec<Subspec>,
@@ -472,7 +487,7 @@ pub enum Expr {
     },
 
     TypeCast {
-        left: Box<Expr>,
+        left: Box<SpannedExpr>,
         into: Type,
         mode: TypeCastMode
     },
@@ -488,12 +503,12 @@ pub enum Expr {
         path: String,
     },
     CffiFn {
-        target: Box<Expr>,
+        target: Box<SpannedExpr>,
         arg_types: Vec<String>,
         return_type: String,
     },
 
-    DeepCopy(Box<Expr>)
+    DeepCopy(Box<SpannedExpr>)
 }
 
 #[derive(Debug, Clone)]
@@ -515,14 +530,6 @@ impl Expr {
         )
     }
 
-    pub fn var(s: &str) -> Box<Expr> {
-        return Box::new(
-            Expr::Variable(
-                Expr::litstr(s)
-            )
-        )
-    }
-
     pub fn s_qword(i: u64) -> Box<Expr> {
         return Box::new(
             Expr::Literal(
@@ -533,7 +540,7 @@ impl Expr {
         )
     }
 
-    pub fn into_value(&self) -> Option<Value> {
+    pub fn literal_as_value(&self) -> Option<Value> {
         if let Expr::Literal(v) = self {
             return Some(v.clone())
         } else {

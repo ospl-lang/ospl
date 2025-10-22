@@ -1,4 +1,4 @@
-use crate::Subspec;
+use crate::{SpannedExpr, Subspec};
 
 use super::*;
 
@@ -37,7 +37,7 @@ impl Parser {
         return Some((spec, block))
     }
 
-    fn parse_cases_list(&mut self) -> (Expr, Vec<(Vec<Subspec>, Block)>) {
+    fn parse_cases_list(&mut self) -> (SpannedExpr, Vec<(Vec<Subspec>, Block)>) {
         self.skip_ws();
         let matching = self.expr()
             .unwrap_or_else(|| self.parse_error("`check` or `select` requires something to match on"));
@@ -83,7 +83,7 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Check {
-                    matching: Box::new(matching),
+                    matching,
                     cases
                 },
                 self.filename.clone()
@@ -102,7 +102,7 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Select {
-                    matching: Box::new(matching),
+                    matching,
                     cases
                 },
                 self.filename.clone()

@@ -36,7 +36,7 @@ impl Interpreter {
     /// `check` may be continued too
     pub fn preform_check(
         ctx: Rc<RefCell<Context>>,
-        matching: &Expr,
+        matching: &SpannedExpr,
         cases: &Vec<(Vec<Subspec>, Block)>
     ) -> StatementControl {
         let thing = Self::expr(ctx.clone(), matching);
@@ -76,7 +76,7 @@ impl Interpreter {
 
     pub fn preform_select(
         ctx: Rc<RefCell<Context>>,
-        matching: &Expr,
+        matching: &SpannedExpr,
         cases: &Vec<(Vec<Subspec>, Block)>
     ) -> StatementControl {
         let thing = Self::expr(ctx.clone(), matching);

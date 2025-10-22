@@ -65,7 +65,7 @@ impl Parser {
         else if let Some(lit) = self.attempt(Self::literal) {
             return Some(
                 Subspec::LiteralRequirement(
-                    lit.into_value()
+                    lit.expr.literal_as_value()
                         .unwrap_or_else(|| self.parse_error("literal failed"))
                 )
             )

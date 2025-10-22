@@ -818,7 +818,7 @@ pub fn stmt(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     let ast = p.stmt().expect("bad AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
-    let result = Interpreter::stmt(ctx.clone(), ast);
+    let result = Interpreter::stmt(ctx.clone(), &ast);  // ehsy?
     println!("{:#?}", result);
     println!("{:#?}", ctx);
 }
@@ -827,7 +827,7 @@ pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     let ast = p.expr().expect("bad AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
-    let result = Interpreter::expr(ctx.clone(), ast);
+    let result = Interpreter::expr(ctx.clone(), &ast);
     println!("{:#?}", result);
     println!("{:#?}", ctx);
 }
@@ -840,7 +840,7 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     // DONT LEAVE THIS IN PROD DUMBFUCK
     // println!("ast: {:#?}", &ast);
 
-    let _ = Interpreter::block(ctx.clone(), ast);
+    let _ = Interpreter::block(ctx.clone(), &ast);
     /* println!("{:#?}", result);
     println!("{:#?}", ctx); */
 }
@@ -855,7 +855,7 @@ pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 
     let _ = Interpreter::block(
         ctx.clone(),
-        Block {
+        &Block {
             stmts: ast,
         }
     );

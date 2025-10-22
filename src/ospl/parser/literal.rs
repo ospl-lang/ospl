@@ -257,7 +257,7 @@ impl Parser {
         self.expect_char(Self::OBJ_LIT_OPEN)
             .unwrap_or_else(|| self.parse_error("expected opening char for class literal"));
 
-        let mut members: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+        let mut members: HashMap<Rc<String>, Rc<RefCell<Expr>>> = HashMap::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -275,7 +275,7 @@ impl Parser {
                     };
 
                     members.insert(
-                        id,
+                        Rc::from(id),  // I think this consumes `id`... IDFK MAN DON'T ASK ME!
                         ex
                     );
                 }
@@ -304,7 +304,7 @@ impl Parser {
         self.expect_char(Self::MIXMAP_LIT_OPEN)?;
 
         let mut positionals: Vec<Rc<RefCell<Expr>>> = Vec::new();
-        let mut keyed: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+        let mut keyed: HashMap<Rc<String>, Rc<RefCell<Expr>>> = HashMap::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -318,7 +318,7 @@ impl Parser {
                 }
                 Some(_) => {
                     if let Some((id, ex)) = self.attempt(Self::parse_kv_pair) {
-                        keyed.insert(id, ex);
+                        keyed.insert(Rc::from(id), ex);  // probably consumes the id but idfc
                     } else if let Some(item) = self.attempt(Self::expr) {
                         positionals.push(
                             Rc::new(

@@ -93,7 +93,7 @@ pub enum Value {
     Tuple(Vec<Rc<RefCell<Value>>>),
     Mixmap {
         ordered: Vec<Rc<RefCell<Value>>>,
-        keyed: HashMap<String, Rc<RefCell<Value>>>
+        keyed: HashMap<Rc<String>, Rc<RefCell<Value>>>
     },
     MacroFn {
         spec: Vec<Subspec>,
@@ -108,7 +108,7 @@ pub enum Value {
         body: Block,
     },
     Object {
-        symbols: HashMap<String, Rc<RefCell<Value>>>,
+        symbols: HashMap<Rc<String>, Rc<RefCell<Value>>>,
     },
     Module {
         // THIS IS REALLY RETARDED BUT I DON'T GIVE A FUCK
@@ -374,8 +374,8 @@ impl SpannedStatement {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign {
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: Expr,
+        right: Expr,
     },
     AssignOp {
         left: Expr,
@@ -386,8 +386,8 @@ pub enum Statement {
         left: Box<Expr>,
     },
     Declaration {
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: Expr,
+        right: Expr,
     },
 
     Expression(Expr),
@@ -398,7 +398,7 @@ pub enum Statement {
     Continue,
 
     Print {
-        thing: Box<Expr>
+        thing: Expr
     },
 
     // ==== CONTROL FLOW ====
@@ -457,10 +457,10 @@ pub enum Expr {
 
     // stupid motherfuckers that don't want to follow the rules
     TupleLiteral(Vec<Rc<RefCell<Expr>>>),
-    ObjectLiteral(HashMap<String, Rc<RefCell<Expr>>>),
+    ObjectLiteral(HashMap<Rc<String>, Rc<RefCell<Expr>>>),
     MixmapLiteral {
         positional: Vec<Rc<RefCell<Expr>>>,
-        keyed: HashMap<String, Rc<RefCell<Expr>>>
+        keyed: HashMap<Rc<String>, Rc<RefCell<Expr>>>
     },
     RealFnLiteral {
         spec: Vec<Subspec>,

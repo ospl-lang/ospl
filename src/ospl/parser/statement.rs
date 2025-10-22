@@ -17,7 +17,7 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Print {
-                    thing: Box::new(ex)
+                    thing: ex
                 },
                 self.filename.clone()
             )
@@ -35,8 +35,8 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Assign {
-                    left: Box::new(id),
-                    right: Box::new(rhs)
+                    left: id,
+                    right: rhs
                 },
                 self.filename.clone()
             )
@@ -71,20 +71,19 @@ impl Parser {
         return Some(
             SpannedStatement::new(
                 self.lineno,
-                Statement::Declaration {
-                    left: Box::new(
-                        Expr::Literal(
-                            Value::String(id)
-                        )
+                Statement::Declaration {  // ehsy?
+                    left: Expr::Literal(
+                        Value::String(id)
                     ),
-                    right: Box::new(
+
+                    // ehsy is this fucking formatting bro?
+                    right:
                         initializer
                         .unwrap_or_else(||  // avoid unneeded work
                             Expr::Literal(
                                 Value::Null
                             )
                         )
-                    )
                 },
                 self.filename.clone()
             )

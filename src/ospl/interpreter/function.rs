@@ -21,8 +21,8 @@ impl Interpreter {
     /// * `args` - The args to unwrap with
     pub fn destruct_into(
         ctx: Rc<RefCell<Context>>,
-        spec: Vec<Subspec>,
-        arg_list: Vec<Rc<RefCell<Value>>>
+        spec: &Vec<Subspec>,
+        arg_list: &Vec<Rc<RefCell<Value>>>
     ) -> Result<(), DestructionError> {
         // TODO: make this error() too...
         // can be done by putting the last executed `SpannedStatement` into Context, although I particularly don't like that strategy... or make `Interpreter` store it...
@@ -88,7 +88,7 @@ impl Interpreter {
                         .clone();  // difference!
 
                     let typ = data.as_type();
-                    if typ != target_typ {
+                    if typ != *target_typ {
                         panic!("failed type annotation check on BindRefTyped, expected {:?}, got {:?}", target_typ, typ);
                     }
 
@@ -104,7 +104,7 @@ impl Interpreter {
                         .deep_clone();
 
                     let typ = data.as_type();
-                    if typ != target_typ {
+                    if typ != *target_typ {
                         panic!("failed type annotation check on BindTyped, expected {:?}, got {:?}", target_typ, typ);
                     }
 
@@ -114,12 +114,16 @@ impl Interpreter {
                 Subspec::Destruct(tree) => Self::destruct_into(
                     ctx.clone(),
                     tree,
-                        args.next().ok_or(DestructionError::NotEnoughArgs)?.borrow().as_values()
+                    &args
+                        .next()
+                        .ok_or(DestructionError::NotEnoughArgs)?
+                        .borrow()
+                        .as_values()
                 )?,
 
                 Subspec::LiteralRequirement(v) => {
                     let arg = args.next().ok_or(DestructionError::NotEnoughArgs)?;
-                    if *arg.borrow() != v {
+                    if *arg.borrow() != *v {
                         return Err(DestructionError::LiteralRequirementFailed);
                     }
                 }
@@ -189,12 +193,11 @@ impl Interpreter {
         };
 
         // assign arguments
-        // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args)
+        Self::destruct_into(child_ctx.clone(), spec, &args)
             .expect("failed macro call (destruction failed!)");
 
         // run the function body
-        return Self::block(child_ctx, body.clone());
+        return Self::block(child_ctx, body);
     }
 
     pub fn do_fn_call(
@@ -227,11 +230,11 @@ impl Interpreter {
             child_ctx.borrow_mut().current_instance = parent_ctx.borrow().current_instance.clone();
         }
 
-        // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args)
+        // look at me ma, no clone!
+        Self::destruct_into(child_ctx.clone(), spec, &args)
             .expect("failed function call (destruction failed!)");
 
         // run the function body
-        return Self::block(child_ctx, body.clone());
+        return Self::block(child_ctx, body);
     }
 }

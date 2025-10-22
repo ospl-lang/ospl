@@ -392,22 +392,22 @@ impl Parser {
 
             // ugly but who the fuck cares
             let path = self.raw_string_literal()
-                .expect("expected (raw) string literal for file path")
+                .unwrap_or_else(|| self.parse_error("expected valid raw string literal for file path"))
                 .into_id();
 
             let mut f = File::open(&path)
-                .expect("failed to open file");
+                .unwrap_or_else(|e| self.parse_error(&format!("failed to open used file: {}", e)));
 
             let mut buff = String::new();
             f.read_to_string(&mut buff)
-                .expect("failed to read file");
+                .unwrap_or_else(|e| self.parse_error(&format!("failed to read used file: {}", e)));
 
             // parse the file
             let mut new_parser = Self::new(&path);
             new_parser.feed(&buff);
 
             let module_root = new_parser.module_root_stmts()
-                .expect("failed to parse module root");
+                .unwrap_or_else(|| self.parse_error("failed to include the file (does it have errors?)"));
 
             return Some(
                 self.new_spanned_expr(
@@ -636,7 +636,7 @@ impl Parser {
 
             // casting (type conversion)
             if self.match_next("as ") {
-                let ty = self.typedef().expect("expected type def after `as` keyword");
+                let ty = self.typedef().unwrap_or_else(|| self.parse_error("expected typedef"));
                 return Some(
                     self.new_spanned_expr(
                         Expr::TypeCast {
@@ -650,7 +650,7 @@ impl Parser {
 
             // casting (pointer reinterpret)
             if self.match_next("asPointerReinterpret ") {
-                let ty = self.typedef().expect("expected type def after `asPointerReinterpret` keyword");
+                let ty = self.typedef().unwrap_or_else(|| self.parse_error("expected typedef"));
                 return Some(
                     self.new_spanned_expr(
                         Expr::TypeCast {

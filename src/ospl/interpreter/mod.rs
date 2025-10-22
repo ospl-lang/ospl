@@ -22,37 +22,21 @@ pub mod assignop;
 impl Interpreter {
     // TODO: optimize this ugly shit
     pub fn error_stmt(span: &SpannedStatement, msg: &str) -> ! {
-        // get the file content
-        let file_data = std::fs::read_to_string(&*span.filename)
-            .expect("failed to read erroring file's content (yes, the error reporting just error'd...)");
-
-        let error_context = file_data.lines().nth(span.line)
-            .expect("the error handling code error'd lmao");  // TODO: write a proper error
-
         panic!(
-            "{}, line {}: {}\n{}",
+            "{}, line {}: {}",
             &*span.filename,
             span.line,
             msg,
-            error_context
         )
     }
 
     pub fn error_expr(span: &SpannedExpr, msg: &str) -> ! {
-        // get the file content
-        let file_data = std::fs::read_to_string(&*span.filename)
-            .expect("failed to read erroring file's content (yes, the error reporting just error'd...)");
-
-        let error_context = file_data.lines().nth(span.line)
-            .expect("the error handling code error'd lmao");  // TODO: write a proper error
-
         panic!(
-            "{}, position {}:{}: {}\n{}",
+            "{}, position {}:{}: {}",
             &*span.filename,
             span.line,
             span.column,
             msg,
-            error_context
         )
     }
 
@@ -107,11 +91,12 @@ impl Interpreter {
                 // set current instance
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
-                let idx: usize = b_key.parse::<usize>().expect(">//< non-integer tuple index");
+                let idx: usize = b_key.parse::<usize>()
+                    .unwrap_or_else(|e| Self::error_expr(b, &format!("failed to parse tuple index (is it not an integer?): {}", e)));
 
                 return t
                     .get(idx)
-                    .expect(">//< bad tuple index")
+                    .unwrap_or_else(|| Self::error_expr(b, "key not found"))
                     .clone()
             },
 
@@ -151,13 +136,13 @@ impl Interpreter {
                     // Rc clone
                     ordered
                         .get(idx)
-                        .expect(">//< bad mixmap index")
+                        .unwrap_or_else(|| Self::error_expr(b, "index not found"))
                         .clone()
                 } else {
                     // Rc clone
                     keyed
                         .get(&b_key)
-                        .expect(">//< bad key")
+                        .unwrap_or_else(|| Self::error_expr(b, "key not found"))
                         .clone()
                 }
             },
@@ -175,20 +160,16 @@ impl Interpreter {
 
                 return symbols
                     .get(&b_key)
-                    .expect(
-                        &format!(
-                            "failed to retrive key `{}` in object: `{:#?}`",
-                            b_key,
-                            symbols
-                        )
-                    )
+                    .unwrap_or_else(|| Self::error_expr(b, "key not found"))
                     .clone()
             },
 
-            Value::Module { context } => return context
-                .borrow()
-                .get(&b_key)
-                .expect("expected key or something in the module idfk man WE NEED TO SHIP ALREADY FUCKJKAHDSJKHAKJSHD"),
+            Value::Module { context } =>
+                return context
+                    .borrow()
+                    .get(&b_key)
+                    .unwrap_or_else(|| Self::error_expr(b, "key not found")),
+
             Value::ForeignLib { library } => {
                 return Rc::new(RefCell::new(Value::ForeignSymbol {
                     library: library.clone(),
@@ -286,19 +267,15 @@ impl Interpreter {
                             library,
                             symbol,
                             &args_clone,
-                        ).expect("foreign function call failed");
+                        ).unwrap_or_else(|e| Self::error_expr(expr, &format!("CFFI function call failed: {}", e)));
                         return Rc::new(RefCell::new(result));
                     }
                     _ => {}
                 }
 
                 return Self::do_call(Some(ctx.clone()), function, new_args)
-                    .unwrap_or_else(|| Rc::new(
-                        RefCell::new(
-                            Value::Null
-                        )
-                    )
-                )
+                    .unwrap_or_else(|e| Self::error_expr(expr, &format!("error during call: {:?}", e)))
+                    .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
             // if it's an operation, we do some dispath
@@ -503,7 +480,7 @@ impl Interpreter {
                     symbol.clone(),
                     arg_types.clone(),
                     return_type.clone(),
-                ).expect("foreign function registration failed");
+                ).unwrap_or_else(|e| Self::error_expr(expr, &format!("failed to register C FFI function (why is this written twice in the code?): {}", e)));
 
                 return Rc::new(RefCell::new(Value::ForeignFn {
                     library: library.clone(),
@@ -543,7 +520,7 @@ impl Interpreter {
                     symbol.clone(),
                     arg_types.clone(),
                     return_type.clone(),
-                ).expect("foreign function registration failed");
+                ).unwrap_or_else(|e| Self::error_expr(expr, &format!("CFFI function registration failed: {}", e)));
 
                 return Rc::new(RefCell::new(Value::ForeignFn {
                     library,

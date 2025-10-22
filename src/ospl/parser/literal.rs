@@ -33,16 +33,16 @@ impl Parser {
                 'b' => { self.pos += 'b'.len_utf8(); Some(Value::Byte(
                     numstr.parse::<u8>()
                     .unwrap_or_else(|_| self.parse_error("invalid value for type byte")))) },
-                'B' => { self.pos += 'B'.len_utf8(); Some(Value::SignedByte(numstr.parse::<i8>().expect("expected valid i8"))) },
+                'B' => { self.pos += 'B'.len_utf8(); Some(Value::SignedByte(numstr.parse::<i8>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i8: {}", e))))) },
 
-                'w' => { self.pos += 'w'.len_utf8(); Some(Value::Word(numstr.parse::<u16>().expect("expected valid u16"))) },
-                'W' => { self.pos += 'W'.len_utf8(); Some(Value::SignedWord(numstr.parse::<i16>().expect("expected valid i16"))) },
+                'w' => { self.pos += 'w'.len_utf8(); Some(Value::Word(numstr.parse::<u16>().unwrap_or_else(|e| self.parse_error(&format!("expected valid u16: {}", e))))) },
+                'W' => { self.pos += 'W'.len_utf8(); Some(Value::SignedWord(numstr.parse::<i16>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i16: {}", e))))) },
 
-                'd' => { self.pos += 'd'.len_utf8(); Some(Value::DoubleWord(numstr.parse::<u32>().expect("expected valid u32"))) },
-                'D' => { self.pos += 'D'.len_utf8(); Some(Value::SignedDoubleWord(numstr.parse::<i32>().expect("expected valid i32"))) },
+                'd' => { self.pos += 'd'.len_utf8(); Some(Value::DoubleWord(numstr.parse::<u32>().unwrap_or_else(|e| self.parse_error(&format!("expected valid u32: {}", e))))) },
+                'D' => { self.pos += 'D'.len_utf8(); Some(Value::SignedDoubleWord(numstr.parse::<i32>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i32: {}", e))))) },
 
-                'q' => { self.pos += 'q'.len_utf8(); Some(Value::QuadrupleWord(numstr.parse::<u64>().expect("expected valid u64"))) },
-                'Q' => { self.pos += 'Q'.len_utf8(); Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().expect("expected valid i64"))) },
+                'q' => { self.pos += 'q'.len_utf8(); Some(Value::QuadrupleWord(numstr.parse::<u64>().unwrap_or_else(|e| self.parse_error(&format!("expected valid u64: {}", e))))) },
+                'Q' => { self.pos += 'Q'.len_utf8(); Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i64: {}", e))))) },
 
                 // any other character is not a postfix: don't consume it.
                 _ => self.number_literal_whole_bad(&numstr),
@@ -61,11 +61,11 @@ impl Parser {
         if let Some(postfix) = self.peek() {
             return match postfix {
                 // duplicated because no f16 type!
-                'h' => { self.pos += 'h'.len_utf8(); Some(Value::Half(numstr.parse().expect("expected valid f32"))) },
-                's' => { self.pos += 's'.len_utf8(); Some(Value::Single(numstr.parse().expect("expected valid f32"))) },
+                'h' => { self.pos += 'h'.len_utf8(); Some(Value::Half(numstr.parse().unwrap_or_else(|e| self.parse_error(&format!("expected valid f32 (yes Half is an f32 lol, RUST FIX YOUR SHIT!): {}", e))))) },
+                's' => { self.pos += 's'.len_utf8(); Some(Value::Single(numstr.parse().unwrap_or_else(|e| self.parse_error(&format!("expected valid f32: {}", e))))) },
 
                 // 64-bit floats
-                'f' => { self.pos += 'f'.len_utf8(); Some(Value::Float(numstr.parse().expect("expected valid f64"))) },
+                'f' => { self.pos += 'f'.len_utf8(); Some(Value::Float(numstr.parse().unwrap_or_else(|e| self.parse_error(&format!("expected valid i64: {}", e))))) },
                 // not a postfix: don't consume it, fall through to default 64-bit float
                 _ => {
                     if let Ok(attempt) = numstr.parse::<f64>() { Some(Value::Float(attempt)) } else { None }

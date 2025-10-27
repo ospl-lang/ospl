@@ -15,7 +15,7 @@ pub enum Subspec {
 
     // yay
     Destruct(Vec<Subspec>),
-    LiteralRequirement(Value),
+    LiteralRequirement(SpannedExpr),
     Ignore,
     ThisRef(String)
 }
@@ -165,6 +165,14 @@ impl Value {
     pub fn into_id(&self) -> String {
         return match self {
             Self::String(s) => s.to_string(),
+            Self::Byte(s) => s.to_string(),
+            Self::SignedByte(s) => s.to_string(),
+            Self::Word(s) => s.to_string(),
+            Self::SignedWord(s) => s.to_string(),
+            Self::DoubleWord(s) => s.to_string(),
+            Self::SignedDoubleWord(s) => s.to_string(),
+            Self::QuadrupleWord(s) => s.to_string(),
+            Self::SignedQuadrupleWord(s) => s.to_string(),
             other @ _ => panic!(">//< expected valid identifier of type str, found: {:?}", other)
         }
     }

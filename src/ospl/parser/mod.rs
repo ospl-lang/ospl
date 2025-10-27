@@ -39,6 +39,8 @@ impl Parser {
     pub fn feed(&mut self, s: &str) {
         self.input = s.to_string(); // replace buffer
         self.pos = 0usize;
+        self.lineno = 0usize;
+        self.colno = 0usize;
     }
 }
 
@@ -50,6 +52,12 @@ impl Parser {
     fn next_char(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.pos += c.len_utf8();
+
+        // newline cheeeeeeeck!
+        if c == '\n' {
+            self.lineno += 1;
+        }
+
         return Some(c);
     }
 
@@ -61,6 +69,7 @@ impl Parser {
         // I don't want this, but I need to do it...
         if c == '\n' {
             self.lineno += 1;
+            self.pos += 1;
         }
 
         if c == target {
@@ -77,11 +86,7 @@ impl Parser {
     {
         let start = self.pos;
         while let Some(c) = self.peek() {
-            // newline check
-            if c == '\n' {
-                self.lineno += 1;
-            }
-
+            // no newline check cuz its done for us
             if f(c) {
                 self.next_char();
             } else {
@@ -95,11 +100,15 @@ impl Parser {
     where
         F: FnOnce(&mut Self) -> Option<R>,
     {
-        let snapshot = self.pos;        // save cursor
+        let snapshot = self.pos;        // save cursors
+        let snapshot_line = self.lineno;
+        let snapshot_col = self.colno;
         if let Some(result) = f(self) {     // try parser branch
             Some(result)                       // success, keep cursor advanced
         } else {
             self.pos = snapshot;               // fail, rewind
+            self.lineno = snapshot_line;
+            self.colno = snapshot_col;
             None
         }
     }
@@ -108,14 +117,19 @@ impl Parser {
         let context_max = std::cmp::min(self.pos + 26, self.input.len());
         panic!(
             "
-syntax or parse error at char {} ({}): {}
+parse error: {}:{}:{} ({} chars in at {})
+near:
+{}
 
 {}",
+            self.filename,
+            self.lineno - 1,  // line numbers start at one
+            self.colno - 1,
             self.pos,
             &self.input.get(self.pos..self.pos+1).unwrap_or("<unknown>"),
-            msg,
             &self.input[self.pos..context_max].trim(),
-        )
+            msg,
+        );
     }
 
     fn expect_char(&mut self, target: char) -> Option<char> {
@@ -129,8 +143,8 @@ syntax or parse error at char {} ({}): {}
     }
 
     fn match_next(&mut self, thing: &str) -> bool {
-        self.lineno += thing.chars().filter(|&c| c == '\n').count();  // man I really don't wanna do this...
         if self.input[self.pos..].starts_with(thing) {
+            // self.lineno += thing.chars().filter(|&c| c == '\n').count();  // man I really don't wanna do this...
             self.pos += thing.len();
             return true
         } else {
@@ -141,8 +155,8 @@ syntax or parse error at char {} ({}): {}
     #[allow(dead_code)]  // turn dead code off here, as I know it'll be used later
     fn find(&mut self, things: Vec<&str>) -> Option<String> {
         for thing in things {
-            self.lineno += thing.chars().filter(|&c| c == '\n').count();  // TODO: check if this shit fucking works or not?
             if self.input[self.pos..].starts_with(thing) {
+                // self.lineno += thing.chars().filter(|&c| c == '\n').count();  // TODO: check if this shit fucking works or not?
                 self.pos += thing.len();  // <- consume the operator!
                 return Some(thing.to_string());
             }
@@ -152,8 +166,6 @@ syntax or parse error at char {} ({}): {}
 
     fn find_peek(&mut self, things: Vec<&str>) -> Option<String> {
         for thing in things {
-            self.lineno += thing.chars().filter(|&c| c == '\n').count();  // count newlines
-
             if self.input[self.pos..].starts_with(thing) {
                 // no consuming
                 return Some(thing.to_string());
@@ -282,12 +294,12 @@ impl Parser {
 
     const RESERVED_WORDS: &[&str] = &[
         // reserved words
-        "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-        "check", "case", "destruct", "from", "print", "new", "fn", "foreign", "import",
+        "loop", "obj", "mix", "return", "if", "else", "select", "check",
+        "case", "destruct", "from", "print", "fn", "foreign", "import",
 
         // types
         "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
-        "half", "single", "float", "str", "ref",
+        "half", "single", "float", "str", "ref", "refto", "tuple", "copyof"
     ];
 
     /// parse a single identifier
@@ -527,8 +539,8 @@ impl Parser {
         return Some(lhs)
     }
 
-    const OSPL_CFFI_FN_KW: &str = "OSPL_CFFI_Fn";
-    const OSPL_CFFI_LOAD_KW: &str = "OSPL_CFFI_Load";
+    const OSPL_CFFI_FN_KW: &str = "OSPL_CFFI_Fn ";
+    const OSPL_CFFI_LOAD_KW: &str = "OSPL_CFFI_Load ";
 
     const PROP_ACCESS_CHAR: char = '.';
     const PROP_DYN_ACCESS_CHAR: char = ':';
@@ -621,7 +633,7 @@ impl Parser {
             // property access (but dynamic this time)
             if self.peek_or_consume(Self::PROP_DYN_ACCESS_CHAR) {
                 self.skip_ws();
-                if let Some(ident) = self.expr() {  // surely that won't blow the stack...
+                if let Some(ident) = self.prefix_expr() {  // surely that won't blow the stack...
                     lhs = self.new_spanned_expr(
                         Expr::Property(
                             Box::new(lhs),
@@ -777,9 +789,14 @@ impl Parser {
 
     pub fn stmt(&mut self) -> Option<SpannedStatement> {
         self.skip_ws();
-        
+
+        // ==== ASSIGN OPS ====
+        if let Some(assign_op) = self.attempt(Self::assign_op) {
+            return Some(assign_op);
+        }
+
         // ==== ASSIGNMENT ====
-        if let Some(v) = self.attempt(Self::assignment) {
+        else if let Some(v) = self.attempt(Self::assignment) {
             return Some(v);
         }
 
@@ -838,11 +855,6 @@ impl Parser {
             return Some(s)
         }
 
-        // ==== ASSIGN OPS ====
-        else if let Some(assign_op) = self.attempt(Self::assign_op) {
-            return Some(assign_op)
-        }
-
         // a last ditch effort, try a bare expression
         else if let Some(s) = self.attempt(Self::expr) {
             return Some(
@@ -865,6 +877,7 @@ impl Parser {
         let Some(op) = self.find_peek_or_consume(vec!["+=", "-=", "*=", "/=", "||=", "&&=", "^^=", "!!="])
             else { return None };
 
+        self.skip_ws();
         let right = self.expr()
             .unwrap_or_else(|| self.parse_error("expected right-hand side after assign operator"));
 

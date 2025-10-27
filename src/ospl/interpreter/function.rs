@@ -139,7 +139,8 @@ impl Interpreter {
 
                 Subspec::LiteralRequirement(v) => {
                     let arg = args.next().ok_or(DestructionError::NotEnoughArgs)?;
-                    if *arg.borrow() != *v {
+                    let value = &*Self::expr(ctx.clone(), v);
+                    if *arg.borrow() != *value.borrow() {
                         return Err(DestructionError::LiteralRequirementFailed);
                     }
                 }
@@ -162,7 +163,7 @@ impl Interpreter {
         args: Vec<Rc<RefCell<Value>>>
     ) -> Result<Option<Rc<RefCell<Value>>>, CallError> {
         match *f.borrow() {
-            Value::RealFn {..} => return Self::do_fn_call(f.clone(), args),
+            Value::RealFn {..} => return Self::do_fn_call(ctx, f.clone(), args),
             Value::MacroFn {..} => return Self::do_macro_call(ctx, f.clone(), args),
             _ => Err(CallError::WhydYouCallIt)
         }
@@ -216,6 +217,7 @@ impl Interpreter {
     }
 
     pub fn do_fn_call(
+        immediate_ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>,
     ) -> Result<Option<Rc<RefCell<Value>>>, CallError> {
@@ -241,8 +243,11 @@ impl Interpreter {
 
         // this shit is fucking retarded but I don't care I just wanna ship
         // the damn language at this fucking point.
-        if let Some(parent_ctx) = ctx.upgrade() {
-            child_ctx.borrow_mut().current_instance = parent_ctx.borrow().current_instance.clone();
+
+        // here we need the call's context otherwise the entire thing has a stroke
+        if let Some(rc_refcell) = immediate_ctx {
+            let immediate = rc_refcell.borrow();
+            child_ctx.borrow_mut().current_instance = immediate.current_instance.clone();
         }
 
         // look at me ma, no clone!

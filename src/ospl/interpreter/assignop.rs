@@ -11,7 +11,9 @@ impl Interpreter {
 
     pub fn handle_add_assign(mut v: std::cell::RefMut<'_, Value>, x: std::cell::Ref<'_, Value>) {
         match (&mut *v, &*x) {
-            (Value::String(s), Value::String(s2)) => s.push_str(s2),
+            (Value::String(s), Value::String(s2)) => {
+                s.push_str(s2)
+            }
 
             // numbers
             (Value::Byte(a), Value::Byte(b)) => *a += b,

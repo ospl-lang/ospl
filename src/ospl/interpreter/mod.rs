@@ -23,18 +23,18 @@ impl Interpreter {
     // TODO: optimize this ugly shit
     pub fn error_stmt(span: &SpannedStatement, msg: &str) -> ! {
         panic!(
-            "{}, line {}: {}",
+            "{}:{}: {}",
             &*span.filename,
-            span.line,
+            span.line - 1,  // line numbers start at 1, not 0..
             msg,
         )
     }
 
     pub fn error_expr(span: &SpannedExpr, msg: &str) -> ! {
         panic!(
-            "{}, position {}:{}: {}",
+            "{}:{}:{}: {}",
             &*span.filename,
-            span.line,
+            span.line - 1,  // line numbers start at 1, not 0..
             span.column,
             msg,
         )
@@ -54,7 +54,6 @@ impl Interpreter {
 
             // safe to clone, we literally could not care less about
             // mutability here, we only care about the ID
-            .clone()
             .into_id();
 
         (a_value, b_key)
@@ -96,7 +95,7 @@ impl Interpreter {
 
                 return t
                     .get(idx)
-                    .unwrap_or_else(|| Self::error_expr(b, "key not found"))
+                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
                     .clone()
             },
 
@@ -142,7 +141,7 @@ impl Interpreter {
                     // Rc clone
                     keyed
                         .get(&b_key)
-                        .unwrap_or_else(|| Self::error_expr(b, "key not found"))
+                        .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
                         .clone()
                 }
             },
@@ -160,7 +159,7 @@ impl Interpreter {
 
                 return symbols
                     .get(&b_key)
-                    .unwrap_or_else(|| Self::error_expr(b, "key not found"))
+                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
                     .clone()
             },
 
@@ -168,7 +167,7 @@ impl Interpreter {
                 return context
                     .borrow()
                     .get(&b_key)
-                    .unwrap_or_else(|| Self::error_expr(b, "key not found")),
+                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key))),
 
             Value::ForeignLib { library } => {
                 return Rc::new(RefCell::new(Value::ForeignSymbol {
@@ -198,6 +197,8 @@ impl Interpreter {
 
                 match b_key.as_str() {
                     "len" => return Rc::new(RefCell::new(Value::QuadrupleWord(s.len() as u64))),
+                    "to_upper" => return Rc::new(RefCell::new(Value::String(s.to_uppercase()))),
+                    "to_lower" => return Rc::new(RefCell::new(Value::String(s.to_lowercase()))),
                     _ => panic!("type `str` has no property {}", b_key)
                 }
             }
@@ -711,9 +712,8 @@ impl Interpreter {
                 _ => unreachable!("you might actually be stupid")
             },
 
-            Statement::Delete { left } => {
+            Statement::Delete { .. } => {
                 todo!("(re)implement delete... COLTON!");
-                return StatementControl::Default;
             },
 
             Statement::ImportLib { name, path } => {

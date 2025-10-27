@@ -236,7 +236,8 @@ impl Parser {
         self.skip_ws();
         self.expect_char(Self::KV_PAIR_SEP)?;
         self.skip_ws();
-        let expr = self.expr()?;
+        let expr = self.expr()
+            .unwrap_or_else(|| self.parse_error("expected expression for the `value` part of the KV pair."));
 
         return Some((
             id,
@@ -259,7 +260,7 @@ impl Parser {
 
         self.skip_ws();
         self.expect_char(Self::OBJ_LIT_OPEN)
-            .unwrap_or_else(|| self.parse_error("expected opening char for class literal"));
+            .unwrap_or_else(|| self.parse_error("expected opening char for key-value pair"));
 
         let mut members: HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>> = HashMap::new();
         loop {
@@ -275,7 +276,7 @@ impl Parser {
                 },
                 Some(_) => {
                     let Some((id, ex)) = self.parse_kv_pair() else {
-                        self.parse_error("invalid key-value pair")
+                        self.parse_error("invalid key-value pair in object literal (either missing entirely or you forgot a `:`)")
                     };
 
                     members.insert(
@@ -283,7 +284,7 @@ impl Parser {
                         ex
                     );
                 }
-                _ => self.parse_error("unexpected EOF in class literal")
+                _ => self.parse_error("unexpected EOF in object literal")
             }
         }
 

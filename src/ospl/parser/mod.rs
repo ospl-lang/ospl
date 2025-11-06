@@ -5,7 +5,7 @@ use crate::{ospl::{
     }, Expr, SpannedStatement, Value
 }, Block, SpannedExpr, Statement};
 
-use std::{cell::RefCell, fs::File, io::Read, path::PathBuf};
+use std::{cell::RefCell, fs::{self, File}, io::Read, path::{Path, PathBuf}};
 use std::rc::Rc;
 
 pub mod spec;
@@ -22,18 +22,57 @@ pub struct Parser {
     // position info
     lineno: usize,
     colno: usize,
-    filename: Rc<str>,  // current file
+    filepath: Rc<str>,  // current file
 }
 
 impl Parser {
-    pub fn new(filename: &str) -> Self {
-        Self {
+    pub fn new<P: AsRef<Path>>(filepath: P) -> Self {
+        let canonical_path: PathBuf = fs::canonicalize(filepath).expect("failed to canoicalize path");
+        let real_path: &str = &*canonical_path.to_string_lossy();
+
+        return Self {
             input: String::new(),
             pos: 0,
             lineno: 0,
             colno: 0,
-            filename: Rc::from(filename)
+            filepath: Rc::from(real_path),
         }
+    }
+
+    // TODO: rewrite ENTIRE FUCKING LANG to save like 0.0001s during parsing! A.k.a STOP THIS FUCKING SHIT!
+    pub fn path(&self) -> &Path {
+        return Path::new(&*self.filepath)
+    }
+
+    pub fn cwd(&self) -> &Path {
+        return self.path().parent().unwrap_or_else(|| Path::new("."))
+    }
+
+    /// Resolves a relative include (e.g., "fileb.ospl") using this parser's directory.
+    pub fn resolve_relative_path(&self, rel: &str) -> PathBuf {
+        return self.cwd().join(rel)
+    }
+
+    /// Spawns a new parser for a relative include.
+    pub fn new_rel(&self, rel: &str) -> Self {
+        let resolved = self.resolve_relative_path(rel);
+        return Self::new(resolved)
+    }
+
+    pub fn subparser(&mut self, p: &str) -> Self {
+        let resolved: PathBuf = self.resolve_relative_path(&p);
+
+        let mut file: File = File::open(&resolved)
+            .expect("failed to include file (failed to open it, does the file exist?)");
+
+        // read our file
+        let mut buffer: String = String::new();
+        file.read_to_string(&mut buffer)
+            .expect("failed to read file");
+
+        let mut parser: Parser = Self::new(&resolved);
+        parser.feed(&buffer);
+        return parser
     }
 
     pub fn feed(&mut self, s: &str) {
@@ -64,16 +103,9 @@ impl Parser {
     fn peek_or_consume(&mut self, target: char) -> bool {
         let c = self.peek()
             .unwrap_or('\0');  // string terminator
-            // .unwrap_or_else(|| self.parse_error("unexpected EOF in peek_or_consume"));
-
-        // I don't want this, but I need to do it...
-        if c == '\n' {
-            self.lineno += 1;
-            self.pos += 1;
-        }
 
         if c == target {
-            self.pos += c.len_utf8();
+            self.next_char();
             return true
         } else {
             return false
@@ -122,7 +154,7 @@ near:
 {}
 
 {}",
-            self.filename,
+            self.filepath,
             self.lineno - 1,  // line numbers start at one
             self.colno - 1,
             self.pos,
@@ -144,24 +176,12 @@ near:
 
     fn match_next(&mut self, thing: &str) -> bool {
         if self.input[self.pos..].starts_with(thing) {
-            // self.lineno += thing.chars().filter(|&c| c == '\n').count();  // man I really don't wanna do this...
+            self.lineno += thing.chars().filter(|&c| c == '\n').count();  // man I really don't wanna do this...
             self.pos += thing.len();
             return true
         } else {
             return false
         }
-    }
-
-    #[allow(dead_code)]  // turn dead code off here, as I know it'll be used later
-    fn find(&mut self, things: Vec<&str>) -> Option<String> {
-        for thing in things {
-            if self.input[self.pos..].starts_with(thing) {
-                // self.lineno += thing.chars().filter(|&c| c == '\n').count();  // TODO: check if this shit fucking works or not?
-                self.pos += thing.len();  // <- consume the operator!
-                return Some(thing.to_string());
-            }
-        }
-        return None
     }
 
     fn find_peek(&mut self, things: Vec<&str>) -> Option<String> {
@@ -191,15 +211,12 @@ near:
             // endl comments
             if self.peek_or_consume('#') {
                 self.consume_while(|c| c != '\n');
-                self.lineno += 1;
             }
 
             // multiline comments
             else if self.match_next("*****") {
                 while !self.match_next("*****") {
-                    if let Some('\n') = self.next_char() {
-                        self.lineno += 1;
-                    }
+                    self.next_char();
                 }
             }
 
@@ -331,12 +348,29 @@ impl Parser {
     const GROUP_CLOSE: &str = "]";
     pub fn prefix_expr(&mut self) -> Option<SpannedExpr> {
         // ==== DO THE LHS ====
-        let lhs: SpannedExpr = if self.match_next("OSPL_CFFI_Load ") {
+        let lhs: SpannedExpr = 
+        
+        if self.match_next(Self::GROUP_OPEN) {
+            // ==== GROUPING ====
             self.skip_ws();
-            let path = self.raw_string_literal()
-                .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"))
-                .into_id();
-            self.new_spanned_expr(Expr::CffiLoad { path })
+            let inner = self.expr()?;                       // parse inside group
+            self.skip_ws();
+
+            if self.match_next(Self::GROUP_CLOSE) { inner }
+            else { self.parse_error("invalid grouping expression (expected group closing marker)") }
+        }
+        
+        else if let Some(v) = self.attempt(Self::literal) {
+            // ==== LITERALS ====
+            v
+        }
+
+        else if self.match_next(Self::OSPL_CFFI_LOAD_KW) {
+            self.skip_ws();
+            let path = self.expr()
+                .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"));
+
+            self.new_spanned_expr(Expr::CffiLoad { path: Box::new(path) })
         }
 
         else if self.match_next(Self::OSPL_CFFI_FN_KW) {
@@ -383,40 +417,17 @@ impl Parser {
                 }
             )
         }
-
-        else if self.match_next(Self::GROUP_OPEN) {
-            // ==== GROUPING ====
-            self.skip_ws();
-            let inner = self.expr()?;                       // parse inside group
-            self.skip_ws();
-
-            if self.match_next(Self::GROUP_CLOSE) { inner }
-            else { self.parse_error("invalid grouping expression (expected group closing marker)") }
-        }
-        
-        else if let Some(v) = self.attempt(Self::literal) {
-            // ==== LITERALS ====
-            v
-        }
         
         else if self.match_next("use ") {  // use statement
             self.skip_ws();
 
             // ugly but who the fuck cares
-            let path = self.raw_string_literal()
+            let path: String = self.raw_string_literal()
                 .unwrap_or_else(|| self.parse_error("expected valid raw string literal for file path"))
                 .into_id();
 
-            let mut f = File::open(&path)
-                .unwrap_or_else(|e| self.parse_error(&format!("failed to open used file: {}", e)));
-
-            let mut buff = String::new();
-            f.read_to_string(&mut buff)
-                .unwrap_or_else(|e| self.parse_error(&format!("failed to read used file: {}", e)));
-
             // parse the file
-            let mut new_parser = Self::new(&path);
-            new_parser.feed(&buff);
+            let mut new_parser: Parser = self.subparser(&path);
 
             let module_root = new_parser.module_root_stmts()
                 .unwrap_or_else(|| self.parse_error("failed to include the file (does it have errors?)"));
@@ -554,11 +565,10 @@ impl Parser {
             // CFFI load literal
             if self.match_next(Self::OSPL_CFFI_LOAD_KW) {
                 self.skip_ws();
-                let path_literal = self.raw_string_literal()
-                    .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"));
-                let path = path_literal.into_id();
+                let path = self.expr()
+                    .unwrap_or_else(|| self.parse_error("expected path after CFFI_Load"));
                 lhs = self.new_spanned_expr(
-                    Expr::CffiLoad { path }
+                    Expr::CffiLoad { path: Box::new(path) }
                 );
                 continue;
             }
@@ -705,8 +715,9 @@ impl Parser {
         // ==== INFIX OPS ====
         self.skip_ws();
         if let Some(op) = self.find_peek_or_consume(vec![
-            "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", "<", ">",
-            "|", "||", "&", "&&"]) {
+            "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", ">>", "<<", "&&", "||",
+            "<", ">", "|", "&"
+        ]) {
             self.skip_ws();
             if let Some(rhs) = self.expr() {
                 lhs = self.new_spanned_expr(
@@ -861,7 +872,7 @@ impl Parser {
                 SpannedStatement::new(
                     self.lineno,
                     Statement::Expression(s),
-                    self.filename.clone()
+                    self.filepath.clone()
                 )
             )
         }
@@ -887,7 +898,7 @@ impl Parser {
                 Statement::AssignOp {
                     left, right, op
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }

@@ -35,7 +35,9 @@ pub enum Type {
     Byte, SignedByte, Word, SignedWord, DoubleWord, SignedDoubleWord,
     QuadrupleWord, SignedQuadrupleWord, Half, Single, Float,
     Bool, String,
-    Tuple, Mixmap, Object, Module, Ref(Option<Box<Type>>),
+    Tuple {
+        length: Option<usize>
+    }, Mixmap, Object, Module, Ref(Option<Box<Type>>),
     MacroFn, RealFn,
 
     // CFFI types
@@ -321,7 +323,7 @@ impl Value {
 
             Value::Object { .. } => Type::Object,
             Value::Mixmap { .. } => Type::Mixmap,
-            Value::Tuple(_) => Type::Tuple,
+            Value::Tuple(t) => Type::Tuple { length: Some(t.len()) },
 
             Value::RealFn { .. } => Type::RealFn,
             Value::MacroFn { .. } => Type::MacroFn,
@@ -508,7 +510,7 @@ pub enum Expr {
         return_type: String,
     },
     CffiLoad {
-        path: String,
+        path: Box<SpannedExpr>,
     },
     CffiFn {
         target: Box<SpannedExpr>,

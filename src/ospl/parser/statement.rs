@@ -19,7 +19,7 @@ impl Parser {
                 Statement::Print {
                     thing: ex
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -38,7 +38,7 @@ impl Parser {
                     left: id,
                     right: rhs
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -89,7 +89,7 @@ impl Parser {
                             )
                         )
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -106,7 +106,7 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Return(ret),
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -120,7 +120,7 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Break,
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -135,7 +135,7 @@ impl Parser {
             SpannedStatement::new(
                 self.lineno,
                 Statement::Continue,
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -184,7 +184,7 @@ impl Parser {
                     on_true,
                     on_false
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -236,7 +236,7 @@ impl Parser {
                     name: lib_name,
                     path: lib_path
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -264,7 +264,7 @@ impl Parser {
                     address,
                     value
                 },
-                self.filename.clone()
+                self.filepath.clone()
             ),
         )
     }

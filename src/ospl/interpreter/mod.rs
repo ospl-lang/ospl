@@ -25,7 +25,7 @@ impl Interpreter {
         panic!(
             "{}:{}: {}",
             &*span.filename,
-            span.line - 1,  // line numbers start at 1, not 0..
+            span.line,  // line numbers start at 1, not 0..
             msg,
         )
     }
@@ -34,7 +34,7 @@ impl Interpreter {
         panic!(
             "{}:{}:{}: {}",
             &*span.filename,
-            span.line - 1,  // line numbers start at 1, not 0..
+            span.line,  // line numbers start at 1, not 0..
             span.column,
             msg,
         )
@@ -203,8 +203,9 @@ impl Interpreter {
                 }
             }
 
-            _ => return a_value.clone()  // Already Rc<RefCell<Value>>
-        };
+            _ => Self::error_expr(a, &format!("property access is not supported on values of this type"))  // TODO: show more info for this error
+            // _ => a_value.clone()
+        }
     }
 
     /// Evaluates an `Expr`
@@ -236,7 +237,7 @@ impl Interpreter {
                     "OSPL_current_family" => Rc::new(RefCell::new(Value::String(std::env::consts::FAMILY.to_string()))),
                     _ => ctx.borrow()
                             .get(&id)
-                            .unwrap_or_else(|| panic!("oh no `{}` no exist!", id))
+                            .unwrap_or_else(|| Self::error_expr(expr, &format!("variable not found: {}", id)))
                             .clone()  // cheap Rc clone
                 }
             }
@@ -493,11 +494,13 @@ impl Interpreter {
 
             // called even LESS so NOBODY fucking cares about preformance here
             Expr::CffiLoad { path } => {
-                let mut ctx_mut = ctx.borrow_mut();
-                ctx_mut.ffi_registry.load_library(path.clone(), &path)
-                    .unwrap_or_else(|e| panic!("Failed to load library '{}': {}", path, e));
+                let path_str = Self::expr(ctx.clone(), &path).borrow().clone();  // TODO: maybe stop this
 
-                return Rc::new(RefCell::new(Value::ForeignLib { library: path.clone() }));
+                let mut ctx_mut = ctx.borrow_mut();
+                ctx_mut.ffi_registry.load_library(path_str.into_id(), &path_str.into_id())
+                    .unwrap_or_else(|e| panic!("Failed to load library '{}': {}", path_str, e));
+
+                return Rc::new(RefCell::new(Value::ForeignLib { library: path_str.into_id() }));
             },
 
             Expr::CffiFn { target, arg_types, return_type } => {
@@ -539,10 +542,15 @@ impl Interpreter {
                     (Value::Byte(b), Type::String) => Value::String(String::from(*b as char)),
                     (Value::SignedDoubleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
                     (Value::SignedDoubleWord(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
+                    (Value::Byte(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
 
+                    (Value::SignedQuadrupleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
                     (Value::QuadrupleWord(a), Type::String) => Value::String(a.to_string()),
 
-                    (Value::String(s), Type::Tuple) => Value::Tuple(
+                    (Value::String(s), Type::Byte) => Value::Byte(s.parse::<u8>().expect("failed to cast str to byte, invalid u8")),
+                    (Value::String(s), Type::DoubleWord) => Value::DoubleWord(s.parse::<u32>().expect("failed to cast str to byte, invalid u32")),
+
+                    (Value::String(s), Type::Tuple { .. }) => Value::Tuple(
                         s
                         .as_bytes()
                         .iter()
@@ -572,7 +580,7 @@ impl Interpreter {
                     let thing = match (&*value.borrow(), &into) {
                         // quadruple word is a ptr
                         (Value::QuadrupleWord(a), Type::String) => casts::ptr_to_string(*a as *const u8),
-                        (Value::QuadrupleWord(a), Type::Tuple) => casts::ptr_to_tuple(*a as *const u8),
+                        (Value::QuadrupleWord(a), Type::Tuple { length: Some(length) }) => casts::ptr_to_tuple(*a as *const u8, *length),
                         _ => panic!("idk how to cast {:?} into {:?}", value, into)
                     };
 

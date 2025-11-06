@@ -86,7 +86,7 @@ impl Parser {
                     matching,
                     cases
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -105,7 +105,7 @@ impl Parser {
                     matching,
                     cases
                 },
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -124,7 +124,7 @@ impl Parser {
                 Statement::Loop(
                     Box::new(ret)
                 ),
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }

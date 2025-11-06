@@ -79,7 +79,7 @@ macro_rules! typical_op_assign {
             (Value::Void, _)                                                => panic!(">//< can't operate to Void!"),
             (_, Value::Void)                                                => panic!(">//< can't operate with Void!"),
 
-            _ => panic!("I don't know how to do this operation on these types (possible type saftey issue)!")
+            _ => panic!("FUCK")
         }
     }};
 }
@@ -109,8 +109,9 @@ macro_rules! typical_cmp {
             (_, Value::Null)                                                => false,
             (Value::Null, _)                                                => false,
 
-            (Value::Void, _)                                                => panic!(">//< can't compare to Void!"),
-            (_, Value::Void)                                                => panic!(">//< can't compare with Void!"),
+            (Value::Void, Value::Void)                                      => true,
+            (Value::Void, _)                                                => false,
+            (_, Value::Void)                                                => false,
 
             _                                                               => panic!(">//< can't compare {:?} with {:?}", $lhs, $rhs),
         }

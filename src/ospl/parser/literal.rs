@@ -222,7 +222,7 @@ impl Parser {
                 Expr::TupleLiteral(elements),
                 self.lineno,
                 0,  // FIXME
-                self.filename.clone()
+                self.filepath.clone()
             )
         );
     }
@@ -293,7 +293,7 @@ impl Parser {
                 Expr::ObjectLiteral(members),
                 self.lineno,
                 self.colno,
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -348,7 +348,7 @@ impl Parser {
                 Expr::MixmapLiteral { positional: positionals, keyed },
                 self.lineno,
                 self.colno,
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -368,7 +368,7 @@ impl Parser {
                 Expr::DeepCopy(Box::new(thing)),
                 self.lineno,
                 self.colno,
-                self.filename.clone()
+                self.filepath.clone()
             )
         )
     }
@@ -378,7 +378,7 @@ impl Parser {
             e,
             self.lineno,
             self.colno,
-            self.filename.clone()
+            self.filepath.clone()
         )
     }
 

@@ -2,12 +2,10 @@ use crate::{ospl::{
     interpreter::{
         Context,
         Interpreter
-    },
-    Expr,
-    Value
-}, Block, Statement};
+    }, Expr, SpannedStatement, Value
+}, Block, SpannedExpr, Statement};
 
-use std::{cell::RefCell, fs::File, io::Read};
+use std::{cell::RefCell, fs::{self, File}, io::Read, path::{Path, PathBuf}};
 use std::rc::Rc;
 
 pub mod spec;
@@ -20,19 +18,68 @@ pub mod types;
 pub struct Parser {
     input: String, // owned buffer
     pos: usize,    // current cursor
+
+    // position info
+    lineno: usize,
+    colno: usize,
+    filepath: Rc<str>,  // current file
 }
 
 impl Parser {
-    pub fn new() -> Self {
-        Self {
+    pub fn new<P: AsRef<Path>>(filepath: P) -> Self {
+        let canonical_path: PathBuf = fs::canonicalize(filepath).expect("failed to canoicalize path");
+        let real_path: &str = &*canonical_path.to_string_lossy();
+
+        return Self {
             input: String::new(),
             pos: 0,
+            lineno: 0,
+            colno: 0,
+            filepath: Rc::from(real_path),
         }
+    }
+
+    // TODO: rewrite ENTIRE FUCKING LANG to save like 0.0001s during parsing! A.k.a STOP THIS FUCKING SHIT!
+    pub fn path(&self) -> &Path {
+        return Path::new(&*self.filepath)
+    }
+
+    pub fn cwd(&self) -> &Path {
+        return self.path().parent().unwrap_or_else(|| Path::new("."))
+    }
+
+    /// Resolves a relative include (e.g., "fileb.ospl") using this parser's directory.
+    pub fn resolve_relative_path(&self, rel: &str) -> PathBuf {
+        return self.cwd().join(rel)
+    }
+
+    /// Spawns a new parser for a relative include.
+    pub fn new_rel(&self, rel: &str) -> Self {
+        let resolved = self.resolve_relative_path(rel);
+        return Self::new(resolved)
+    }
+
+    pub fn subparser(&mut self, p: &str) -> Self {
+        let resolved: PathBuf = self.resolve_relative_path(&p);
+
+        let mut file: File = File::open(&resolved)
+            .expect("failed to include file (failed to open it, does the file exist?)");
+
+        // read our file
+        let mut buffer: String = String::new();
+        file.read_to_string(&mut buffer)
+            .expect("failed to read file");
+
+        let mut parser: Parser = Self::new(&resolved);
+        parser.feed(&buffer);
+        return parser
     }
 
     pub fn feed(&mut self, s: &str) {
         self.input = s.to_string(); // replace buffer
         self.pos = 0usize;
+        self.lineno = 0usize;
+        self.colno = 0usize;
     }
 }
 
@@ -44,16 +91,21 @@ impl Parser {
     fn next_char(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.pos += c.len_utf8();
+
+        // newline cheeeeeeeck!
+        if c == '\n' {
+            self.lineno += 1;
+        }
+
         return Some(c);
     }
 
     fn peek_or_consume(&mut self, target: char) -> bool {
         let c = self.peek()
             .unwrap_or('\0');  // string terminator
-            // .unwrap_or_else(|| self.parse_error("unexpected EOF in peek_or_consume"));
 
         if c == target {
-            self.pos += c.len_utf8();
+            self.next_char();
             return true
         } else {
             return false
@@ -66,6 +118,7 @@ impl Parser {
     {
         let start = self.pos;
         while let Some(c) = self.peek() {
+            // no newline check cuz its done for us
             if f(c) {
                 self.next_char();
             } else {
@@ -79,11 +132,15 @@ impl Parser {
     where
         F: FnOnce(&mut Self) -> Option<R>,
     {
-        let snapshot = self.pos;        // save cursor
+        let snapshot = self.pos;        // save cursors
+        let snapshot_line = self.lineno;
+        let snapshot_col = self.colno;
         if let Some(result) = f(self) {     // try parser branch
             Some(result)                       // success, keep cursor advanced
         } else {
             self.pos = snapshot;               // fail, rewind
+            self.lineno = snapshot_line;
+            self.colno = snapshot_col;
             None
         }
     }
@@ -92,14 +149,19 @@ impl Parser {
         let context_max = std::cmp::min(self.pos + 26, self.input.len());
         panic!(
             "
-syntax or parse error at char {} ({}): {}
+parse error: {}:{}:{} ({} chars in at {})
+near:
+{}
 
 {}",
+            self.filepath,
+            self.lineno - 1,  // line numbers start at one
+            self.colno - 1,
             self.pos,
             &self.input.get(self.pos..self.pos+1).unwrap_or("<unknown>"),
-            msg,
             &self.input[self.pos..context_max].trim(),
-        )
+            msg,
+        );
     }
 
     fn expect_char(&mut self, target: char) -> Option<char> {
@@ -114,22 +176,12 @@ syntax or parse error at char {} ({}): {}
 
     fn match_next(&mut self, thing: &str) -> bool {
         if self.input[self.pos..].starts_with(thing) {
+            self.lineno += thing.chars().filter(|&c| c == '\n').count();  // man I really don't wanna do this...
             self.pos += thing.len();
             return true
         } else {
             return false
         }
-    }
-
-    #[allow(dead_code)]  // turn dead code off here, as I know it'll be used later
-    fn find(&mut self, things: Vec<&str>) -> Option<String> {
-        for thing in things {
-            if self.input[self.pos..].starts_with(thing) {
-                self.pos += thing.len();  // <- consume the operator!
-                return Some(thing.to_string());
-            }
-        }
-        None
     }
 
     fn find_peek(&mut self, things: Vec<&str>) -> Option<String> {
@@ -139,10 +191,11 @@ syntax or parse error at char {} ({}): {}
                 return Some(thing.to_string());
             }
         }
-        return None;
+        return None
     }
 
     fn find_peek_or_consume(&mut self, things: Vec<&str>) -> Option<String> {
+        // no newline check cuz the thing calls the other thing and that other thing does the check
         if let Some(x) = self.find_peek(things) {
             self.pos += x.len();
             return Some(x)
@@ -182,12 +235,16 @@ impl Parser {
 
         let stmts = self.stmts()?;
 
-        return Some(Block(stmts));
+        return Some(
+            Block {
+                stmts,
+            }
+        );
     }
 
-    fn stmts(&mut self) -> Option<Vec<Statement>> {
+    fn stmts(&mut self) -> Option<Vec<SpannedStatement>> {
         self.expect_char('{')?;
-        let mut stmts: Vec<Statement> = Vec::new();
+        let mut stmts: Vec<SpannedStatement> = Vec::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -219,8 +276,8 @@ impl Parser {
         return Some(stmts)
     }
     
-    pub fn module_root_stmts(&mut self) -> Option<Vec<Statement>> {
-        let mut stmts: Vec<Statement> = Vec::new();
+    pub fn module_root_stmts(&mut self) -> Option<Vec<SpannedStatement>> {
+        let mut stmts: Vec<SpannedStatement> = Vec::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -254,12 +311,12 @@ impl Parser {
 
     const RESERVED_WORDS: &[&str] = &[
         // reserved words
-        "loop", "obj", "mix", "cls", "return", "if", "else", "select",
-        "check", "case", "destruct", "from", "print", "new", "fn", "foreign", "import",
+        "loop", "obj", "mix", "return", "if", "else", "select", "check",
+        "case", "destruct", "from", "print", "fn", "foreign", "import",
 
         // types
         "byte", "BYTE", "word", "WORD", "dword", "DWORD", "qword", "QWORD",
-        "half", "single", "float", "str", "ref",
+        "half", "single", "float", "str", "ref", "refto", "tuple", "copyof"
     ];
 
     /// parse a single identifier
@@ -289,14 +346,31 @@ impl Parser {
 
     const GROUP_OPEN: &str = "[";
     const GROUP_CLOSE: &str = "]";
-    pub fn prefix_expr(&mut self) -> Option<Expr> {
+    pub fn prefix_expr(&mut self) -> Option<SpannedExpr> {
         // ==== DO THE LHS ====
-        let lhs = if self.match_next("OSPL_CFFI_Load ") {
+        let lhs: SpannedExpr = 
+        
+        if self.match_next(Self::GROUP_OPEN) {
+            // ==== GROUPING ====
             self.skip_ws();
-            let path = self.raw_string_literal()
-                .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"))
-                .into_id();
-            Expr::CffiLoad { path }
+            let inner = self.expr()?;                       // parse inside group
+            self.skip_ws();
+
+            if self.match_next(Self::GROUP_CLOSE) { inner }
+            else { self.parse_error("invalid grouping expression (expected group closing marker)") }
+        }
+        
+        else if let Some(v) = self.attempt(Self::literal) {
+            // ==== LITERALS ====
+            v
+        }
+
+        else if self.match_next(Self::OSPL_CFFI_LOAD_KW) {
+            self.skip_ws();
+            let path = self.expr()
+                .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"));
+
+            self.new_spanned_expr(Expr::CffiLoad { path: Box::new(path) })
         }
 
         else if self.match_next(Self::OSPL_CFFI_FN_KW) {
@@ -335,57 +409,40 @@ impl Parser {
             let return_type = self.identifier()
                 .unwrap_or_else(|| self.parse_error("expected return type identifier"));
 
-            Expr::CffiFn {
-                target: Box::new(target_expr),
-                arg_types,
-                return_type,
-            }
-        }
-
-        else if self.match_next(Self::GROUP_OPEN) {
-            // ==== GROUPING ====
-            self.skip_ws();
-            let inner = self.expr()?;                       // parse inside group
-            self.skip_ws();
-
-            if self.match_next(Self::GROUP_CLOSE) { inner }
-            else { self.parse_error("invalid grouping expression (expected group closing marker)") }
-        }
-        
-        else if let Some(v) = self.attempt(Self::literal) {
-            // ==== LITERALS ====
-            v
+            self.new_spanned_expr(
+                Expr::CffiFn {
+                    target: Box::new(target_expr),
+                    arg_types,
+                    return_type,
+                }
+            )
         }
         
         else if self.match_next("use ") {  // use statement
             self.skip_ws();
 
             // ugly but who the fuck cares
-            let path = self.raw_string_literal()
-                .expect("expected (raw) string literal for file path")
+            let path: String = self.raw_string_literal()
+                .unwrap_or_else(|| self.parse_error("expected valid raw string literal for file path"))
                 .into_id();
 
-            let mut f = File::open(path)
-                .expect("failed to open file");
-
-            let mut buff = String::new();
-            f.read_to_string(&mut buff)
-                .expect("failed to read file");
-
             // parse the file
-            let mut new_parser = Self::new();
-            new_parser.feed(&buff);
+            let mut new_parser: Parser = self.subparser(&path);
 
             let module_root = new_parser.module_root_stmts()
-                .expect("failed to parse module root");
+                .unwrap_or_else(|| self.parse_error("failed to include the file (does it have errors?)"));
 
             return Some(
-                Expr::Import(
-                    module_root
+                self.new_spanned_expr(
+                    Expr::Import {
+                        ast: module_root,
+                        filename: PathBuf::from(path)
+                    }
                 )
             );
         }
 
+        // what
         else if self.match_next("foreign ") {
             self.skip_ws();
 
@@ -434,32 +491,43 @@ impl Parser {
             let return_type = self.identifier()
                 .unwrap_or_else(|| self.parse_error("expected return type"));
 
-            Expr::ForeignFunctionLiteral {
-                library: lib,
-                symbol,
-                arg_types,
-                return_type,
-            }
+            self.new_spanned_expr(
+                Expr::ForeignFunctionLiteral {
+                    library: lib,
+                    symbol,
+                    arg_types,
+                    return_type,
+                }
+            )
         }
 
         else if let Some(id) = self.attempt(Self::identifier) {
             // ==== VARS ====
-            Expr::Variable(
-                Box::new(
-                    Expr::Literal(
-                        Value::String(id)
+
+            // ugly
+            self.new_spanned_expr(
+                Expr::Variable(
+                    Box::new(
+                        self.new_spanned_expr(
+                            Expr::Literal(
+                                Value::String(id)
+                            )
+                        )
                     )
                 )
             )
         }
         
+        // DRY violation speedrun any% - tied WR with that one other piece of code...
         else if self.peek_or_consume('@') {  // deref
             // whitespace is not allowed
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to deref"));
 
-            Expr::Deref(
-                Box::new(expr)
+            self.new_spanned_expr(
+                Expr::Deref(
+                    Box::new(expr)
+                )
             )
         }
         
@@ -467,26 +535,28 @@ impl Parser {
             let expr = self.expr()
                 .unwrap_or_else(|| self.parse_error("expected expression to ref"));
 
-            Expr::Ref(
-                Box::new(expr)
+            self.new_spanned_expr(
+                Expr::Ref(
+                    Box::new(expr)
+                )
             )
         }
         
         else {
-            // WE HAVE NO IDEA WHAT THE LHS IS
+            // WE HAVE NO IDEA EHSY THE LHS IS
             return None;
         };
 
         return Some(lhs)
     }
 
-    const OSPL_CFFI_FN_KW: &str = "OSPL_CFFI_Fn";
-    const OSPL_CFFI_LOAD_KW: &str = "OSPL_CFFI_Load";
+    const OSPL_CFFI_FN_KW: &str = "OSPL_CFFI_Fn ";
+    const OSPL_CFFI_LOAD_KW: &str = "OSPL_CFFI_Load ";
 
     const PROP_ACCESS_CHAR: char = '.';
     const PROP_DYN_ACCESS_CHAR: char = ':';
-    pub fn expr(&mut self) -> Option<Expr> {
-        let mut lhs = self.prefix_expr()?;
+    pub fn expr(&mut self) -> Option<SpannedExpr> {
+        let mut lhs: SpannedExpr = self.prefix_expr()?;
 
         // ==== POSTFIX OPS ====
         loop {
@@ -495,10 +565,11 @@ impl Parser {
             // CFFI load literal
             if self.match_next(Self::OSPL_CFFI_LOAD_KW) {
                 self.skip_ws();
-                let path_literal = self.raw_string_literal()
-                    .unwrap_or_else(|| self.parse_error("expected raw string literal for ?!CFFI_Load"));
-                let path = path_literal.into_id();
-                lhs = Expr::CffiLoad { path };
+                let path = self.expr()
+                    .unwrap_or_else(|| self.parse_error("expected path after CFFI_Load"));
+                lhs = self.new_spanned_expr(
+                    Expr::CffiLoad { path: Box::new(path) }
+                );
                 continue;
             }
 
@@ -541,11 +612,13 @@ impl Parser {
                 let return_type = self.identifier()
                     .unwrap_or_else(|| self.parse_error("expected return type identifier"));
 
-                lhs = Expr::CffiFn {
-                    target: Box::new(target_expr),
-                    arg_types,
-                    return_type,
-                };
+                lhs = self.new_spanned_expr(
+                    Expr::CffiFn {
+                        target: Box::new(target_expr),
+                        arg_types,
+                        return_type,
+                    }
+                );
                 continue;
             }
 
@@ -553,9 +626,13 @@ impl Parser {
             if self.peek_or_consume(Self::PROP_ACCESS_CHAR) {
                 self.skip_ws();
                 if let Some(ident) = self.identifier() {
-                    lhs = Expr::Property(
-                        Box::new(lhs),
-                        Box::new(Expr::Literal(Value::String(ident))),
+                    lhs = self.new_spanned_expr(
+                        Expr::Property(
+                            Box::new(lhs),
+                            Box::new(
+                                self.new_spanned_expr(Expr::Literal(Value::String(ident)))
+                            ),
+                        )
                     );
                     continue;
                 } else {
@@ -566,10 +643,12 @@ impl Parser {
             // property access (but dynamic this time)
             if self.peek_or_consume(Self::PROP_DYN_ACCESS_CHAR) {
                 self.skip_ws();
-                if let Some(ident) = self.expr() {  // surely that won't blow the stack...
-                    lhs = Expr::Property(
-                        Box::new(lhs),
-                        Box::new(ident),
+                if let Some(ident) = self.prefix_expr() {  // surely that won't blow the stack...
+                    lhs = self.new_spanned_expr(
+                        Expr::Property(
+                            Box::new(lhs),
+                            Box::new(ident),
+                        )
                     );
                     continue;
                 } else {
@@ -579,25 +658,29 @@ impl Parser {
 
             // casting (type conversion)
             if self.match_next("as ") {
-                let ty = self.typedef().expect("expected type def after `as` keyword");
+                let ty = self.typedef().unwrap_or_else(|| self.parse_error("expected typedef"));
                 return Some(
-                    Expr::TypeCast {
-                        left: Box::new(lhs),
-                        into: ty,
-                        mode: crate::TypeCastMode::Convert
-                    }
+                    self.new_spanned_expr(
+                        Expr::TypeCast {
+                            left: Box::new(lhs),
+                            into: ty,
+                            mode: crate::TypeCastMode::Convert
+                        }
+                    )
                 )
             }
 
             // casting (pointer reinterpret)
             if self.match_next("asPointerReinterpret ") {
-                let ty = self.typedef().expect("expected type def after `asPointerReinterpret` keyword");
+                let ty = self.typedef().unwrap_or_else(|| self.parse_error("expected typedef"));
                 return Some(
-                    Expr::TypeCast {
-                        left: Box::new(lhs),
-                        into: ty,
-                        mode: crate::TypeCastMode::PointerReinterpret
-                    }
+                    self.new_spanned_expr(
+                        Expr::TypeCast {
+                            left: Box::new(lhs),
+                            into: ty,
+                            mode: crate::TypeCastMode::PointerReinterpret
+                        }
+                    )
                 )
             }
 
@@ -617,10 +700,12 @@ impl Parser {
                         _ => break
                     }
                 }
-                lhs = Expr::FunctionCall {
-                    left: Box::new(lhs),
-                    args: fnargs,
-                };
+                lhs = self.new_spanned_expr(
+                    Expr::FunctionCall {
+                        left: Box::new(lhs),
+                        args: fnargs,
+                    }
+                );
                 continue;
             }
 
@@ -630,28 +715,45 @@ impl Parser {
         // ==== INFIX OPS ====
         self.skip_ws();
         if let Some(op) = self.find_peek_or_consume(vec![
-            "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", "<", ">",
-            "|", "||", "&", "&&"]) {
+            "+", "-", "*", "/", "%", ">=", "<=", "==", "!=", ">>", "<<", "&&", "||",
+            "<", ">", "|", "&"
+        ]) {
             self.skip_ws();
             if let Some(rhs) = self.expr() {
-                lhs = Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    right: Box::new(rhs),
-                    op,
-                };
+                lhs = self.new_spanned_expr(
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        right: Box::new(rhs),
+                        op,
+                    }
+                );
             }
         }
 
         Some(lhs)
     }
 
-    fn parse_cffi_target(&mut self) -> Expr {
+
+    fn parse_cffi_target(&mut self) -> SpannedExpr {
         self.skip_ws();
 
         let base_id = self.identifier()
             .unwrap_or_else(|| self.parse_error("expected identifier for CFFI target"));
 
-        let mut expr = Expr::Variable(Expr::litstr(&base_id));
+        // weird recursion kind of thing here... ehsy?
+        let mut expr: SpannedExpr = self.new_spanned_expr(
+            Expr::Variable(
+                Box::new(
+                    self.new_spanned_expr(
+                        Expr::Literal(
+                            Value::String(
+                                base_id  // gives up ownership I think?
+                            )
+                        )
+                    )
+                )
+            )
+        );
 
         loop {
             self.skip_ws();
@@ -660,9 +762,19 @@ impl Parser {
                 self.skip_ws();
                 let ident = self.identifier()
                     .unwrap_or_else(|| self.parse_error("expected identifier after '.' in CFFI target"));
-                expr = Expr::Property(
-                    Box::new(expr),
-                    Expr::litstr(&ident),
+                expr = self.new_spanned_expr(
+                    Expr::Property(
+                        Box::new(expr),
+                        Box::new(
+                            self.new_spanned_expr(
+                                Expr::Literal(
+                                    Value::String(
+                                        ident
+                                    )
+                                )
+                            )
+                        )
+                    )
                 );
                 continue;
             }
@@ -671,9 +783,11 @@ impl Parser {
                 self.skip_ws();
                 let ident_expr = self.expr()
                     .unwrap_or_else(|| self.parse_error("expected expression after ':' in CFFI target"));
-                expr = Expr::Property(
-                    Box::new(expr),
-                    Box::new(ident_expr),
+                expr = self.new_spanned_expr(
+                    Expr::Property(
+                        Box::new(expr),
+                        Box::new(ident_expr),
+                    )
                 );
                 continue;
             }
@@ -681,14 +795,19 @@ impl Parser {
             break;
         }
 
-        expr
+        return expr
     }
 
-    pub fn stmt(&mut self) -> Option<Statement> {
+    pub fn stmt(&mut self) -> Option<SpannedStatement> {
         self.skip_ws();
-        
+
+        // ==== ASSIGN OPS ====
+        if let Some(assign_op) = self.attempt(Self::assign_op) {
+            return Some(assign_op);
+        }
+
         // ==== ASSIGNMENT ====
-        if let Some(v) = self.attempt(Self::assignment) {
+        else if let Some(v) = self.attempt(Self::assignment) {
             return Some(v);
         }
 
@@ -747,15 +866,14 @@ impl Parser {
             return Some(s)
         }
 
-        // ==== ASSIGN OPS ====
-        else if let Some(assign_op) = self.attempt(Self::assign_op) {
-            return Some(assign_op)
-        }
-
         // a last ditch effort, try a bare expression
         else if let Some(s) = self.attempt(Self::expr) {
             return Some(
-                Statement::Expression(s)
+                SpannedStatement::new(
+                    self.lineno,
+                    Statement::Expression(s),
+                    self.filepath.clone()
+                )
             )
         }
 
@@ -763,38 +881,43 @@ impl Parser {
         return None;
     }
 
-    fn assign_op(&mut self) -> Option<Statement> {
+    fn assign_op(&mut self) -> Option<SpannedStatement> {
         let left = self.expr()?;
         self.skip_ws();
 
         let Some(op) = self.find_peek_or_consume(vec!["+=", "-=", "*=", "/=", "||=", "&&=", "^^=", "!!="])
             else { return None };
 
+        self.skip_ws();
         let right = self.expr()
             .unwrap_or_else(|| self.parse_error("expected right-hand side after assign operator"));
 
         return Some(
-            Statement::AssignOp {
-                left, right, op
-            }
+            SpannedStatement::new(
+                self.lineno,
+                Statement::AssignOp {
+                    left, right, op
+                },
+                self.filepath.clone()
+            )
         )
     }
 }
 
 pub fn stmt(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
-    let ast = p.stmt().expect("bad AST");
+    let ast = p.stmt().expect("bad AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
-    let result = Interpreter::stmt(ctx.clone(), ast);
+    let result = Interpreter::stmt(ctx.clone(), &ast);  // ehsy?
     println!("{:#?}", result);
     println!("{:#?}", ctx);
 }
 
 pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
-    let ast = p.expr().expect("bad AST");
+    let ast = p.expr().expect("bad AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
-    let result = Interpreter::expr(ctx.clone(), ast);
+    let result = Interpreter::expr(ctx.clone(), &ast);
     println!("{:#?}", result);
     println!("{:#?}", ctx);
 }
@@ -802,12 +925,12 @@ pub fn expr(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
-    let ast = p.block().expect("invalid or no AST.");
+    let ast = p.block().expect("invalid or no AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
     // println!("ast: {:#?}", &ast);
 
-    let _ = Interpreter::block(ctx.clone(), ast);
+    let _ = Interpreter::block(ctx.clone(), &ast);
     /* println!("{:#?}", result);
     println!("{:#?}", ctx); */
 }
@@ -815,12 +938,17 @@ pub fn block(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
 pub fn stmts(ctx: Rc<RefCell<Context>>, p: &mut Parser, s: &str) {
     p.feed(s);
     p.skip_ws();  // go to the first meaningful item
-    let ast = p.module_root_stmts().expect("invalid or no AST.");
+    let ast = p.module_root_stmts().expect("invalid or no AST. (please turn on RUST_BACKTRACE=1 and report the logs to us!)");
 
     // DONT LEAVE THIS IN PROD DUMBFUCK
     // println!("ast: {:#?}", &ast);
 
-    let _ = Interpreter::block(ctx.clone(), Block(ast));
+    let _ = Interpreter::block(
+        ctx.clone(),
+        &Block {
+            stmts: ast,
+        }
+    );
     /* println!("{:#?}", result);
     println!("{:#?}", ctx); */
 }

@@ -62,12 +62,11 @@ impl Parser {
 
         // ==== MORE FUCKING BASE CASES ====
         // ==== LITERAL EXPECTATION ====
-        else if let Some(lit) = self.attempt(Self::literal) {
+        else if self.peek_or_consume('[') {
+            let expr = self.expr().unwrap_or_else(|| self.parse_error("an expression is required in a literal requirement"));
+            self.expect_char(']').unwrap_or_else(|| self.parse_error("a closing `]` is required after a literal requirement"));
             return Some(
-                Subspec::LiteralRequirement(
-                    lit.into_value()
-                        .unwrap_or_else(|| self.parse_error("literal failed"))
-                )
+                Subspec::LiteralRequirement(expr)
             )
         }
 

@@ -1,0 +1,52 @@
+if self.match_next("OSPL_CFFI_Load ") {
+            self.skip_ws();
+            let path = self.expr()
+                .unwrap_or_else(|| self.parse_error("expected raw string literal for OSPL_CFFI_Load"));
+
+            self.new_spanned_expr(Expr::CffiLoad { path: Box::new(path) })
+        }
+
+        else if self.match_next(Self::OSPL_CFFI_FN_KW) {
+            self.skip_ws();
+            let target_expr = self.parse_cffi_target();
+
+            self.skip_ws();
+            self.expect_char('(')
+                .unwrap_or_else(|| self.parse_error("expected '(' before argument type list"));
+
+            let mut arg_types = Vec::new();
+            loop {
+                self.skip_ws();
+                if self.peek_or_consume(')') { break; }
+
+                let ty = self.identifier()
+                    .unwrap_or_else(|| self.parse_error("expected argument type identifier"));
+                arg_types.push(ty);
+
+                self.skip_ws();
+                if self.peek_or_consume(',') {
+                    continue;
+                } else if self.peek_or_consume(')') {
+                    break;
+                } else {
+                    self.parse_error("expected ',' or ')' in argument type list");
+                }
+            }
+
+            self.skip_ws();
+            self.match_next("-> ")
+                .then_some(())
+                .unwrap_or_else(|| self.parse_error("expected '->' before return type"));
+
+            self.skip_ws();
+            let return_type = self.identifier()
+                .unwrap_or_else(|| self.parse_error("expected return type identifier"));
+
+            self.new_spanned_expr(
+                Expr::CffiFn {
+                    target: Box::new(target_expr),
+                    arg_types,
+                    return_type,
+                }
+            )
+        }

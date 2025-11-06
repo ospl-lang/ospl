@@ -260,7 +260,7 @@ fn box_value(value: Value, ty: &str) -> Result<Box<dyn RawValueHolder>, String> 
         // might not even work
         (Value::String(s), "ptr" | "pointer" | "cstr") => {
             let c_str = CString::new(s.as_str())
-                .expect("failed to allocate C string");
+                .expect("failed to allocate C string");  // TODO: error message correctly here
 
             // println!("C strnig: {:?}", c_str);
 

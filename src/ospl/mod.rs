@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, rc::{Rc, Weak}
+    cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}
 };
 
 use crate::Context;
@@ -15,7 +15,7 @@ pub enum Subspec {
 
     // yay
     Destruct(Vec<Subspec>),
-    LiteralRequirement(Value),
+    LiteralRequirement(SpannedExpr),
     Ignore,
     ThisRef(String)
 }
@@ -35,7 +35,9 @@ pub enum Type {
     Byte, SignedByte, Word, SignedWord, DoubleWord, SignedDoubleWord,
     QuadrupleWord, SignedQuadrupleWord, Half, Single, Float,
     Bool, String,
-    Tuple, Mixmap, Object, Module, Ref(Option<Box<Type>>),
+    Tuple {
+        length: Option<usize>
+    }, Mixmap, Object, Module, Ref(Option<Box<Type>>),
     MacroFn, RealFn,
 
     // CFFI types
@@ -93,7 +95,7 @@ pub enum Value {
     Tuple(Vec<Rc<RefCell<Value>>>),
     Mixmap {
         ordered: Vec<Rc<RefCell<Value>>>,
-        keyed: HashMap<String, Rc<RefCell<Value>>>
+        keyed: HashMap<Rc<String>, Rc<RefCell<Value>>>
     },
     MacroFn {
         spec: Vec<Subspec>,
@@ -108,7 +110,7 @@ pub enum Value {
         body: Block,
     },
     Object {
-        symbols: HashMap<String, Rc<RefCell<Value>>>,
+        symbols: HashMap<Rc<String>, Rc<RefCell<Value>>>,
     },
     Module {
         // THIS IS REALLY RETARDED BUT I DON'T GIVE A FUCK
@@ -165,6 +167,14 @@ impl Value {
     pub fn into_id(&self) -> String {
         return match self {
             Self::String(s) => s.to_string(),
+            Self::Byte(s) => s.to_string(),
+            Self::SignedByte(s) => s.to_string(),
+            Self::Word(s) => s.to_string(),
+            Self::SignedWord(s) => s.to_string(),
+            Self::DoubleWord(s) => s.to_string(),
+            Self::SignedDoubleWord(s) => s.to_string(),
+            Self::QuadrupleWord(s) => s.to_string(),
+            Self::SignedQuadrupleWord(s) => s.to_string(),
             other @ _ => panic!(">//< expected valid identifier of type str, found: {:?}", other)
         }
     }
@@ -313,7 +323,7 @@ impl Value {
 
             Value::Object { .. } => Type::Object,
             Value::Mixmap { .. } => Type::Mixmap,
-            Value::Tuple(_) => Type::Tuple,
+            Value::Tuple(t) => Type::Tuple { length: Some(t.len()) },
 
             Value::RealFn { .. } => Type::RealFn,
             Value::MacroFn { .. } => Type::MacroFn,
@@ -349,56 +359,73 @@ impl Value {
 
 pub mod value_traits;
 
-///////////////////////////////////////////////////////////////////////////////
+//.////////////////////////////////////////////////////////////////////////////
 // statements
-///////////////////////////////////////////////////////////////////////////////
+//.////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct SpannedStatement {
+    filename: Rc<str>,  // memory space
+    line: usize,
+    stmt: Statement
+}
+
+impl SpannedStatement {
+    pub fn new(line: usize, stmt: Statement, file: Rc<str>) -> SpannedStatement {
+        return Self {
+            line,
+            stmt,
+            filename: file
+        }
+    }
+}
 
 // TODO: remove all these uneeded Box<Expr>
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assign {
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: SpannedExpr,
+        right: SpannedExpr,
     },
     AssignOp {
-        left: Expr,
-        right: Expr,
+        left: SpannedExpr,
+        right: SpannedExpr,
         op: String
     },
     Delete {
-        left: Box<Expr>,
+        left: SpannedExpr,
     },
     Declaration {
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: SpannedExpr,
+        right: SpannedExpr,
     },
 
-    Expression(Expr),
+    Expression(SpannedExpr),
 
     // control flow
-    Return(Expr),
+    Return(SpannedExpr),
     Break,
     Continue,
 
     Print {
-        thing: Box<Expr>
+        thing: SpannedExpr
     },
 
     // ==== CONTROL FLOW ====
     // if-else
     If {
-        condition: Expr,
+        condition: SpannedExpr,
         on_true: Block,
         on_false: Option<Block>  // you don't need an else
     },
 
     // switch
     Check {
-        matching: Box<Expr>,
+        matching: SpannedExpr,
         cases: Vec<(Vec<Subspec>, Block)>,
     },
     Select {
-        matching: Box<Expr>,
+        matching: SpannedExpr,
         cases: Vec<(Vec<Subspec>, Block)>,
     },
     Loop(Box<Block>),
@@ -408,8 +435,8 @@ pub enum Statement {
     },
 
     Memcopy {
-        address: Expr,
-        value: Expr,
+        address: SpannedExpr,
+        value: SpannedExpr,
     }
 }
 
@@ -418,41 +445,59 @@ pub enum Statement {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
+pub struct SpannedExpr {
+    expr: Expr,
+
+    line: usize,
+    column: usize,
+    filename: Rc<str>,  // save on memory space
+}
+
+impl SpannedExpr {
+    pub fn new(expr: Expr, line: usize, column: usize, file: Rc<str>) -> Self {
+        return Self { expr, line, column, filename: file }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expr {
     Literal(Value),
-    Variable(Box<Expr>),
-    Property(Box<Expr>, Box<Expr>),
+    Variable(Box<SpannedExpr>),
+    Property(Box<SpannedExpr>, Box<SpannedExpr>),
     FunctionCall {
-        left: Box<Expr>,
-        args: Vec<Expr>,
+        left: Box<SpannedExpr>,
+        args: Vec<SpannedExpr>,
     },
     BinaryOp {
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: Box<SpannedExpr>,
+        right: Box<SpannedExpr>,
         op: String
     },
     UnaryOp {
-        left: Box<Expr>,
+        left: Box<SpannedExpr>,
         op: String
     },
-    Deref(Box<Expr>),
-    Ref(Box<Expr>),
+    Deref(Box<SpannedExpr>),
+    Ref(Box<SpannedExpr>),
 
     // stupid motherfuckers that don't want to follow the rules
-    TupleLiteral(Vec<Rc<RefCell<Expr>>>),
-    ObjectLiteral(HashMap<String, Rc<RefCell<Expr>>>),
+    TupleLiteral(Vec<Rc<RefCell<SpannedExpr>>>),
+    ObjectLiteral(HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>>),
     MixmapLiteral {
-        positional: Vec<Rc<RefCell<Expr>>>,
-        keyed: HashMap<String, Rc<RefCell<Expr>>>
+        positional: Vec<Rc<RefCell<SpannedExpr>>>,
+        keyed: HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>>
     },
     RealFnLiteral {
         spec: Vec<Subspec>,
         body: Block,
     },
-    Import(Vec<Statement>),
+    Import {
+        ast: Vec<SpannedStatement>,
+        filename: PathBuf,
+    },
 
     TypeCast {
-        left: Box<Expr>,
+        left: Box<SpannedExpr>,
         into: Type,
         mode: TypeCastMode
     },
@@ -465,15 +510,15 @@ pub enum Expr {
         return_type: String,
     },
     CffiLoad {
-        path: String,
+        path: Box<SpannedExpr>,
     },
     CffiFn {
-        target: Box<Expr>,
+        target: Box<SpannedExpr>,
         arg_types: Vec<String>,
         return_type: String,
     },
 
-    DeepCopy(Box<Expr>)
+    DeepCopy(Box<SpannedExpr>)
 }
 
 #[derive(Debug, Clone)]
@@ -495,14 +540,6 @@ impl Expr {
         )
     }
 
-    pub fn var(s: &str) -> Box<Expr> {
-        return Box::new(
-            Expr::Variable(
-                Expr::litstr(s)
-            )
-        )
-    }
-
     pub fn s_qword(i: u64) -> Box<Expr> {
         return Box::new(
             Expr::Literal(
@@ -513,7 +550,7 @@ impl Expr {
         )
     }
 
-    pub fn into_value(&self) -> Option<Value> {
+    pub fn literal_as_value(&self) -> Option<Value> {
         if let Expr::Literal(v) = self {
             return Some(v.clone())
         } else {
@@ -527,4 +564,6 @@ impl Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
-pub struct Block(pub Vec<Statement>);
+pub struct Block {
+    pub stmts: Vec<SpannedStatement>,
+}

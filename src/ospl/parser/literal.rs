@@ -1,9 +1,6 @@
 use super::Parser;
 use crate::{
-    Subspec,
-    Value,
-    Block,
-    Expr
+    Block, Expr, SpannedExpr, Subspec, Value
 };
 use std::{
     cell::RefCell, collections::HashMap, rc::Rc
@@ -36,16 +33,16 @@ impl Parser {
                 'b' => { self.pos += 'b'.len_utf8(); Some(Value::Byte(
                     numstr.parse::<u8>()
                     .unwrap_or_else(|_| self.parse_error("invalid value for type byte")))) },
-                'B' => { self.pos += 'B'.len_utf8(); Some(Value::SignedByte(numstr.parse::<i8>().expect("expected valid i8"))) },
+                'B' => { self.pos += 'B'.len_utf8(); Some(Value::SignedByte(numstr.parse::<i8>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i8: {}", e))))) },
 
-                'w' => { self.pos += 'w'.len_utf8(); Some(Value::Word(numstr.parse::<u16>().expect("expected valid u16"))) },
-                'W' => { self.pos += 'W'.len_utf8(); Some(Value::SignedWord(numstr.parse::<i16>().expect("expected valid i16"))) },
+                'w' => { self.pos += 'w'.len_utf8(); Some(Value::Word(numstr.parse::<u16>().unwrap_or_else(|e| self.parse_error(&format!("expected valid u16: {}", e))))) },
+                'W' => { self.pos += 'W'.len_utf8(); Some(Value::SignedWord(numstr.parse::<i16>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i16: {}", e))))) },
 
-                'd' => { self.pos += 'd'.len_utf8(); Some(Value::DoubleWord(numstr.parse::<u32>().expect("expected valid u32"))) },
-                'D' => { self.pos += 'D'.len_utf8(); Some(Value::SignedDoubleWord(numstr.parse::<i32>().expect("expected valid i32"))) },
+                'd' => { self.pos += 'd'.len_utf8(); Some(Value::DoubleWord(numstr.parse::<u32>().unwrap_or_else(|e| self.parse_error(&format!("expected valid u32: {}", e))))) },
+                'D' => { self.pos += 'D'.len_utf8(); Some(Value::SignedDoubleWord(numstr.parse::<i32>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i32: {}", e))))) },
 
-                'q' => { self.pos += 'q'.len_utf8(); Some(Value::QuadrupleWord(numstr.parse::<u64>().expect("expected valid u64"))) },
-                'Q' => { self.pos += 'Q'.len_utf8(); Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().expect("expected valid i64"))) },
+                'q' => { self.pos += 'q'.len_utf8(); Some(Value::QuadrupleWord(numstr.parse::<u64>().unwrap_or_else(|e| self.parse_error(&format!("expected valid u64: {}", e))))) },
+                'Q' => { self.pos += 'Q'.len_utf8(); Some(Value::SignedQuadrupleWord(numstr.parse::<i64>().unwrap_or_else(|e| self.parse_error(&format!("expected valid i64: {}", e))))) },
 
                 // any other character is not a postfix: don't consume it.
                 _ => self.number_literal_whole_bad(&numstr),
@@ -64,11 +61,11 @@ impl Parser {
         if let Some(postfix) = self.peek() {
             return match postfix {
                 // duplicated because no f16 type!
-                'h' => { self.pos += 'h'.len_utf8(); Some(Value::Half(numstr.parse().expect("expected valid f32"))) },
-                's' => { self.pos += 's'.len_utf8(); Some(Value::Single(numstr.parse().expect("expected valid f32"))) },
+                'h' => { self.pos += 'h'.len_utf8(); Some(Value::Half(numstr.parse().unwrap_or_else(|e| self.parse_error(&format!("expected valid f32 (yes Half is an f32 lol, RUST FIX YOUR SHIT!): {}", e))))) },
+                's' => { self.pos += 's'.len_utf8(); Some(Value::Single(numstr.parse().unwrap_or_else(|e| self.parse_error(&format!("expected valid f32: {}", e))))) },
 
                 // 64-bit floats
-                'f' => { self.pos += 'f'.len_utf8(); Some(Value::Float(numstr.parse().expect("expected valid f64"))) },
+                'f' => { self.pos += 'f'.len_utf8(); Some(Value::Float(numstr.parse().unwrap_or_else(|e| self.parse_error(&format!("expected valid i64: {}", e))))) },
                 // not a postfix: don't consume it, fall through to default 64-bit float
                 _ => {
                     if let Ok(attempt) = numstr.parse::<f64>() { Some(Value::Float(attempt)) } else { None }
@@ -108,7 +105,7 @@ impl Parser {
     }
 
     const FN_LIT_KW: &str = "fn";
-    pub fn fn_literal(&mut self) -> Option<Expr> {
+    pub fn fn_literal(&mut self) -> Option<SpannedExpr> {
         if !self.match_next(Self::FN_LIT_KW) {
             return None
         }
@@ -119,10 +116,12 @@ impl Parser {
         let block: Block = self.block()?;
 
         return Some(
-            Expr::RealFnLiteral {
-                spec,
-                body: block
-            }
+            self.new_spanned_expr(
+                Expr::RealFnLiteral {
+                    spec,
+                    body: block
+                },
+            )
         )
     }
 
@@ -188,10 +187,10 @@ impl Parser {
     const TUPLE_LIT_OPEN: char = '(';
     const TUPLE_LIT_CLOSE: char = ')';
     const TUPLE_LIT_SEP: char = ',';
-    pub fn tuple_literal(&mut self) -> Option<Expr> {
+    pub fn tuple_literal(&mut self) -> Option<SpannedExpr> {
         self.expect_char(Self::TUPLE_LIT_OPEN)?;
 
-        let mut elements: Vec<Rc<RefCell<Expr>>> = Vec::new();
+        let mut elements: Vec<Rc<RefCell<SpannedExpr>>> = Vec::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -219,7 +218,12 @@ impl Parser {
         }
         self.skip_ws();
         return Some(
-            Expr::TupleLiteral(elements)
+            SpannedExpr::new(
+                Expr::TupleLiteral(elements),
+                self.lineno,
+                0,  // FIXME
+                self.filepath.clone()
+            )
         );
     }
 
@@ -227,12 +231,13 @@ impl Parser {
 
     /// touch any of these `?` and the mixmap literals will break.
     /// I AM WARNING YOU.
-    pub fn parse_kv_pair(&mut self) -> Option<(String, Rc<RefCell<Expr>>)> {
+    pub fn parse_kv_pair(&mut self) -> Option<(String, Rc<RefCell<SpannedExpr>>)> {
         let id = self.identifier()?;
         self.skip_ws();
         self.expect_char(Self::KV_PAIR_SEP)?;
         self.skip_ws();
-        let expr = self.expr()?;
+        let expr = self.expr()
+            .unwrap_or_else(|| self.parse_error("expected expression for the `value` part of the KV pair."));
 
         return Some((
             id,
@@ -248,16 +253,16 @@ impl Parser {
     const OBJ_LIT_OPEN: char = '{';
     const OBJ_LIT_CLOSE: char = '}';
     const OBJ_LIT_SEP: char = ',';
-    pub fn obj_literal(&mut self) -> Option<Expr> {
+    pub fn obj_literal(&mut self) -> Option<SpannedExpr> {
         if !self.match_next(Self::OBJ_LIT_KW) {
             return None
         }
 
         self.skip_ws();
         self.expect_char(Self::OBJ_LIT_OPEN)
-            .unwrap_or_else(|| self.parse_error("expected opening char for class literal"));
+            .unwrap_or_else(|| self.parse_error("expected opening char for key-value pair"));
 
-        let mut members: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+        let mut members: HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>> = HashMap::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -271,21 +276,24 @@ impl Parser {
                 },
                 Some(_) => {
                     let Some((id, ex)) = self.parse_kv_pair() else {
-                        self.parse_error("invalid key-value pair")
+                        self.parse_error("invalid key-value pair in object literal (either missing entirely or you forgot a `:`)")
                     };
 
                     members.insert(
-                        id,
+                        Rc::from(id),  // I think this consumes `id`... IDFK MAN DON'T ASK ME!
                         ex
                     );
                 }
-                _ => self.parse_error("unexpected EOF in class literal")
+                _ => self.parse_error("unexpected EOF in object literal")
             }
         }
 
         return Some(
-            Expr::ObjectLiteral(
-                members
+            SpannedExpr::new(
+                Expr::ObjectLiteral(members),
+                self.lineno,
+                self.colno,
+                self.filepath.clone()
             )
         )
     }
@@ -294,7 +302,7 @@ impl Parser {
     const MIXMAP_LIT_OPEN: char = '{';
     const MIXMAP_LIT_CLOSE: char = '}';
     const MIXMAP_LIT_SEP: char = ',';
-    pub fn mixmap_literal(&mut self) -> Option<Expr> {
+    pub fn mixmap_literal(&mut self) -> Option<SpannedExpr> {
         if !self.match_next(Self::MIXMAP_LIT_KW) {
             return None
         }
@@ -303,8 +311,8 @@ impl Parser {
 
         self.expect_char(Self::MIXMAP_LIT_OPEN)?;
 
-        let mut positionals: Vec<Rc<RefCell<Expr>>> = Vec::new();
-        let mut keyed: HashMap<String, Rc<RefCell<Expr>>> = HashMap::new();
+        let mut positionals: Vec<Rc<RefCell<SpannedExpr>>> = Vec::new();
+        let mut keyed: HashMap<Rc<String>, Rc<RefCell<SpannedExpr>>> = HashMap::new();
         loop {
             self.skip_ws();
             match self.peek() {
@@ -318,7 +326,7 @@ impl Parser {
                 }
                 Some(_) => {
                     if let Some((id, ex)) = self.attempt(Self::parse_kv_pair) {
-                        keyed.insert(id, ex);
+                        keyed.insert(Rc::from(id), ex);  // probably consumes the id but idfc
                     } else if let Some(item) = self.attempt(Self::expr) {
                         positionals.push(
                             Rc::new(
@@ -336,12 +344,17 @@ impl Parser {
         }
 
         return Some(
-            Expr::MixmapLiteral { positional: positionals, keyed }
+            SpannedExpr::new(
+                Expr::MixmapLiteral { positional: positionals, keyed },
+                self.lineno,
+                self.colno,
+                self.filepath.clone()
+            )
         )
     }
 
     const COPY_KW: &str = "copyof ";
-    pub fn copyof_expr(&mut self) -> Option<Expr> {
+    pub fn copyof_expr(&mut self) -> Option<SpannedExpr> {
         if !self.match_next(Self::COPY_KW) {
             return None
         }
@@ -351,7 +364,21 @@ impl Parser {
             .unwrap_or_else(|| self.parse_error("need valid expression to make a copy of a thing"));
 
         return Some(
-            Expr::DeepCopy(Box::new(thing))
+            SpannedExpr::new(
+                Expr::DeepCopy(Box::new(thing)),
+                self.lineno,
+                self.colno,
+                self.filepath.clone()
+            )
+        )
+    }
+
+    pub fn new_spanned_expr(&self, e: Expr) -> SpannedExpr {
+        return SpannedExpr::new(
+            e,
+            self.lineno,
+            self.colno,
+            self.filepath.clone()
         )
     }
 
@@ -359,17 +386,14 @@ impl Parser {
     const NULL_KW: &str = "null";
     const TRUE_KW: &str = "true";
     const FALSE_KW: &str = "false";
-    pub fn literal(&mut self) -> Option<Expr> {
+    pub fn literal(&mut self) -> Option<SpannedExpr> {
+        // DRY violation speedrun - any% WR (as of Wednesday, October 22nd, 2025 @ 06:37:06 PM EDT)
         if let Some(num) = self.attempt(Self::number_literal_fraction) {
-            return Some(
-                Expr::Literal(num)
-            );
+            return Some(self.new_spanned_expr(Expr::Literal(num)))
         }
 
         else if let Some(num) = self.attempt(Self::number_literal_whole) {
-            return Some(
-                Expr::Literal(num)
-            );
+            return Some(self.new_spanned_expr(Expr::Literal(num)))
         }
 
         else if let Some(v) = self.find_peek_or_consume(
@@ -380,31 +404,18 @@ impl Parser {
                 Self::FALSE_KW  // false
             ]) {
             return match v.as_ref() {
-                // null
-                Self::NULL_KW => Some(
-                    Expr::Literal(Value::Null)
-                ),
-
-                // void
-                Self::VOID_KW => Some(
-                    Expr::Literal(Value::Void)
-                ),
-
-                // true
-                Self::TRUE_KW => Some(
-                    Expr::Literal(Value::Bool(true))
-                ),
-
-                // false
-                Self::FALSE_KW => Some(
-                    Expr::Literal(Value::Bool(false))
-                ),
+                // null_and_void: yknow like the chase theme from FORSAKEN.
+                // I am listening to Creation Of Hatred rn btw
+                Self::NULL_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Null))),
+                Self::VOID_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Void))),
+                Self::TRUE_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Bool(true)))),
+                Self::FALSE_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Bool(false)))),
                 _ => None
             };
         }
 
         else if let Some(mcro) = self.attempt(Self::macro_literal) {
-            return Some(Expr::Literal(mcro));
+            return Some(self.new_spanned_expr(Expr::Literal(mcro)));
         }
 
         else if let Some(realfn) = self.attempt(Self::fn_literal) {
@@ -420,19 +431,19 @@ impl Parser {
         }
 
         else if let Some(escstr) = self.attempt(Self::escaped_string_literal) {
-            return Some(Expr::Literal(escstr));
+            return Some(self.new_spanned_expr(Expr::Literal(escstr)));
         }
 
         else if let Some(rawstr) = self.attempt(Self::raw_string_literal) {
-            return Some(Expr::Literal(rawstr));
+            return Some(self.new_spanned_expr(Expr::Literal(rawstr)));
         }
 
         else if let Some(obj) = self.attempt(Self::obj_literal) {
             return Some(obj)
         }
 
-        else if let Some(class) = self.attempt(Self::copyof_expr) {
-            return Some(class)
+        else if let Some(copyof) = self.attempt(Self::copyof_expr) {
+            return Some(copyof)
         }
 
         else { return None; }

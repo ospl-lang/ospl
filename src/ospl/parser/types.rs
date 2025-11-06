@@ -19,7 +19,22 @@ impl Parser {
             else if self.match_next("float") {Type::Float}
             else if self.match_next("bool") {Type::Bool}
             else if self.match_next("str") {Type::String}
-            else if self.match_next("tuple") {Type::Tuple}
+            else if self.match_next("tuple") {
+                if self.peek_or_consume('[') {
+                    // parse length expr
+                    let length = self.number_literal_whole()
+                        .unwrap_or_else(|| self.parse_error("invalid length for tuple"));
+
+                    self.expect_char(']')
+                        .unwrap_or_else(|| self.parse_error("tuple with length requires closing `[`"));
+
+                    return Some(
+                        Type::Tuple { length: Some(length.as_usize()) }
+                    )
+                }
+
+                return Some(Type::Tuple { length: None })
+            }
             else if self.match_next("mix") {Type::Mixmap}
             else if self.match_next("obj") {Type::Object}
             else if self.match_next(Self::OSPL_CFFI_SYMBOL_TYPE) {Type::ForeignSymbol}

@@ -7,7 +7,20 @@ use std::cell::RefCell;
 pub enum DestructionError {
     NotEnoughArgs,
     TooManyArgs,
-    LiteralRequirementFailed
+    LiteralRequirementFailed,
+    ThisRefShouldNotBeThere,
+    BindTypedCheckFailed {
+        expected: Type,
+        got: Type
+    }
+}
+
+#[derive(Debug)]
+pub enum CallError {
+    DestructionError(DestructionError),
+    IlligalType,
+    WhydYouCallIt,
+    LexicalScopeDeleted
 }
 
 impl Interpreter {
@@ -21,12 +34,12 @@ impl Interpreter {
     /// * `args` - The args to unwrap with
     pub fn destruct_into(
         ctx: Rc<RefCell<Context>>,
-        spec: Vec<Subspec>,
-        arg_list: Vec<Rc<RefCell<Value>>>
+        spec: &Vec<Subspec>,
+        arg_list: &Vec<Rc<RefCell<Value>>>
     ) -> Result<(), DestructionError> {
-        // fucking retarded whores over at The Rust Foundation don't make it
-        // easy to iterate in this very common situation, so we gotta do this
-        // retarded shit.
+        // TODO: make this error() too...
+        // can be done by putting the last executed `SpannedStatement` into Context, although I particularly don't like that strategy... or make `Interpreter` store it...
+        // or just pass it into the function, whatever works... or just never do this one
         let mut args = arg_list.into_iter();
 
         for subspec in spec.into_iter() {
@@ -40,7 +53,7 @@ impl Interpreter {
                         b
                         .current_instance
                         .as_ref()
-                        .expect("tried to use thisref when there is no thisref (or more than one thisref used)")
+                        .ok_or(DestructionError::ThisRefShouldNotBeThere)?
                         .clone();
 
                     b.set(&id, Value::Ref(this.upgrade().unwrap().clone()));  // operate with the same mutable borrow
@@ -88,7 +101,7 @@ impl Interpreter {
                         .clone();  // difference!
 
                     let typ = data.as_type();
-                    if typ != target_typ {
+                    if typ != *target_typ {
                         panic!("failed type annotation check on BindRefTyped, expected {:?}, got {:?}", target_typ, typ);
                     }
 
@@ -104,8 +117,11 @@ impl Interpreter {
                         .deep_clone();
 
                     let typ = data.as_type();
-                    if typ != target_typ {
-                        panic!("failed type annotation check on BindTyped, expected {:?}, got {:?}", target_typ, typ);
+                    if typ != *target_typ {
+                        return Err(DestructionError::BindTypedCheckFailed {
+                            expected: typ,
+                            got: target_typ.clone()  // clone is bad but idfc
+                        })
                     }
 
                     ctx.borrow_mut().set(&key, data);
@@ -114,12 +130,17 @@ impl Interpreter {
                 Subspec::Destruct(tree) => Self::destruct_into(
                     ctx.clone(),
                     tree,
-                        args.next().ok_or(DestructionError::NotEnoughArgs)?.borrow().as_values()
+                    &args
+                        .next()
+                        .ok_or(DestructionError::NotEnoughArgs)?
+                        .borrow()
+                        .as_values()
                 )?,
 
                 Subspec::LiteralRequirement(v) => {
                     let arg = args.next().ok_or(DestructionError::NotEnoughArgs)?;
-                    if *arg.borrow() != v {
+                    let value = &*Self::expr(ctx.clone(), v);
+                    if *arg.borrow() != *value.borrow() {
                         return Err(DestructionError::LiteralRequirementFailed);
                     }
                 }
@@ -128,11 +149,10 @@ impl Interpreter {
             };
         }
 
-        // make sure we don't have tOO MANY ARGS
+        // make sure we don't have too many args
         if args.next().is_some() {
             return Err(DestructionError::TooManyArgs);
         }
-
 
         return Ok(());
     }
@@ -141,11 +161,11 @@ impl Interpreter {
         ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>
-    ) -> Option<Rc<RefCell<Value>>> {
+    ) -> Result<Option<Rc<RefCell<Value>>>, CallError> {
         match *f.borrow() {
-            Value::RealFn {..} => return Self::do_fn_call(f.clone(), args),
+            Value::RealFn {..} => return Self::do_fn_call(ctx, f.clone(), args),
             Value::MacroFn {..} => return Self::do_macro_call(ctx, f.clone(), args),
-            _ => panic!("tried to call an uncallable value")
+            _ => Err(CallError::WhydYouCallIt)
         }
     }
 
@@ -165,7 +185,7 @@ impl Interpreter {
         ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>
-    ) -> Option<Rc<RefCell<Value>>> {
+    ) -> Result<Option<Rc<RefCell<Value>>>, CallError> {
         // create child context
         let child_ctx = Rc::new(
             RefCell::new(
@@ -185,26 +205,26 @@ impl Interpreter {
         let f_ref = f.borrow(); // keep Ref<Value> alive
         let (spec, body) = match &*f_ref {
             Value::MacroFn { spec, body } => (spec, body),
-            _ => panic!("tried to call non-macro: {:#?}!", f_ref),
+            _ => return Err(CallError::IlligalType)
         };
 
         // assign arguments
-        // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args)
-            .expect("failed macro call (destruction failed!)");
+        Self::destruct_into(child_ctx.clone(), spec, &args)
+            .map_err(|e| return CallError::DestructionError(e))?;
 
         // run the function body
-        return Self::block(child_ctx, body.clone());
+        return Ok(Self::block(child_ctx, body));
     }
 
     pub fn do_fn_call(
+        immediate_ctx: Option<Rc<RefCell<Context>>>,
         f: Rc<RefCell<Value>>,
         args: Vec<Rc<RefCell<Value>>>,
-    ) -> Option<Rc<RefCell<Value>>> {
+    ) -> Result<Option<Rc<RefCell<Value>>>, CallError> {
         let f_ref = f.borrow();
         let Value::RealFn { spec, body , ctx} = &*f_ref
         else {
-            panic!("tried to call non-function")
+            return Err(CallError::IlligalType)
         };
 
         // create child context
@@ -214,7 +234,7 @@ impl Interpreter {
                     Some(
                         ctx
                             .upgrade()
-                            .expect("failed to upgrade `ctx` (does the context exist?)")
+                            .ok_or(CallError::LexicalScopeDeleted)?
                             .clone()
                     )
                 )
@@ -223,15 +243,18 @@ impl Interpreter {
 
         // this shit is fucking retarded but I don't care I just wanna ship
         // the damn language at this fucking point.
-        if let Some(parent_ctx) = ctx.upgrade() {
-            child_ctx.borrow_mut().current_instance = parent_ctx.borrow().current_instance.clone();
+
+        // here we need the call's context otherwise the entire thing has a stroke
+        if let Some(rc_refcell) = immediate_ctx {
+            let immediate = rc_refcell.borrow();
+            child_ctx.borrow_mut().current_instance = immediate.current_instance.clone();
         }
 
-        // cloning spec is not cheap, I don't like it but whatever
-        Self::destruct_into(child_ctx.clone(), spec.clone(), args)
-            .expect("failed function call (destruction failed!)");
+        // look at me ma, no clone!
+        Self::destruct_into(child_ctx.clone(), spec, &args)
+            .map_err(|e| return CallError::DestructionError(e))?;
 
         // run the function body
-        return Self::block(child_ctx, body.clone());
+        return Ok(Self::block(child_ctx, body));
     }
 }

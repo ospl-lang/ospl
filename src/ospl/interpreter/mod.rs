@@ -19,31 +19,49 @@ pub struct Interpreter;
 pub mod function;
 pub mod controlflow;
 pub mod assignop;
-
 impl Interpreter {
+    // TODO: optimize this ugly shit
+    pub fn error_stmt(span: &SpannedStatement, msg: &str) -> ! {
+        panic!(
+            "{}:{}: {}",
+            &*span.filename,
+            span.line,  // line numbers start at 1, not 0..
+            msg,
+        )
+    }
+
+    pub fn error_expr(span: &SpannedExpr, msg: &str) -> ! {
+        panic!(
+            "{}:{}:{}: {}",
+            &*span.filename,
+            span.line,  // line numbers start at 1, not 0..
+            span.column,
+            msg,
+        )
+    }
+
     fn solve_for_avbk(
         ctx: &Rc<RefCell<Context>>,
-        a: Box<Expr>,
-        b: Box<Expr>,
+        a: &SpannedExpr,
+        b: &SpannedExpr,
     ) -> (Rc<RefCell<Value>>, String) {
         // Resolve a_value (av)
-        let a_value: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *a);
+        let a_value: Rc<RefCell<Value>> = Self::expr(ctx.clone(), a);
 
         // Resolve b_key (bk)
-        let b_key = Self::expr(ctx.clone(), *b)
+        let b_key = Self::expr(ctx.clone(), b)
             .borrow()
 
             // safe to clone, we literally could not care less about
             // mutability here, we only care about the ID
-            .clone()
             .into_id();
 
         (a_value, b_key)
     }
 
-    fn execute_if_body(body: Block, newctx: Rc<RefCell<Context>>) -> Option<StatementControl> {
-        for stmt in body.0 {
-            match Self::stmt(newctx.clone(), stmt) {
+    fn execute_if_body(body: &Block, newctx: Rc<RefCell<Context>>) -> Option<StatementControl> {
+        for stmt in &body.stmts {
+            match Self::stmt(newctx.clone(), &stmt) {
                 StatementControl::Default => {}
                 ctrl => return Some(ctrl)
             }
@@ -51,7 +69,8 @@ impl Interpreter {
         None
     }
 
-    fn property_access(ctx: Rc<RefCell<Context>>, a: Box<Expr>, b: Box<Expr>) -> Rc<RefCell<Value>> {
+    // TODO: span Expr too
+    fn property_access(ctx: Rc<RefCell<Context>>, a: &SpannedExpr, b: &SpannedExpr) -> Rc<RefCell<Value>> {
         let (a_value, b_key) = Self::solve_for_avbk(&ctx, a, b);
 
         match &*a_value.borrow() {
@@ -71,11 +90,12 @@ impl Interpreter {
                 // set current instance
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
-                let idx: usize = b_key.parse::<usize>().expect(">//< non-integer tuple index");
+                let idx: usize = b_key.parse::<usize>()
+                    .unwrap_or_else(|e| Self::error_expr(b, &format!("failed to parse tuple index (is it not an integer?): {}", e)));
 
                 return t
                     .get(idx)
-                    .expect(">//< bad tuple index")
+                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
                     .clone()
             },
 
@@ -115,13 +135,13 @@ impl Interpreter {
                     // Rc clone
                     ordered
                         .get(idx)
-                        .expect(">//< bad mixmap index")
+                        .unwrap_or_else(|| Self::error_expr(b, "index not found"))
                         .clone()
                 } else {
                     // Rc clone
                     keyed
                         .get(&b_key)
-                        .expect(">//< bad key")
+                        .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
                         .clone()
                 }
             },
@@ -138,21 +158,17 @@ impl Interpreter {
                 ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
 
                 return symbols
-                    .get(b_key.as_str())
-                    .expect(
-                        &format!(
-                            "failed to retrive key `{}` in object: `{:#?}`",
-                            b_key,
-                            symbols
-                        )
-                    )
+                    .get(&b_key)
+                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
                     .clone()
             },
 
-            Value::Module { context } => return context
-                .borrow()
-                .get(&b_key)
-                .expect("expected key or something in the module idfk man WE NEED TO SHIP ALREADY FUCKJKAHDSJKHAKJSHD"),
+            Value::Module { context } =>
+                return context
+                    .borrow()
+                    .get(&b_key)
+                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key))),
+
             Value::ForeignLib { library } => {
                 return Rc::new(RefCell::new(Value::ForeignSymbol {
                     library: library.clone(),
@@ -181,12 +197,15 @@ impl Interpreter {
 
                 match b_key.as_str() {
                     "len" => return Rc::new(RefCell::new(Value::QuadrupleWord(s.len() as u64))),
+                    "to_upper" => return Rc::new(RefCell::new(Value::String(s.to_uppercase()))),
+                    "to_lower" => return Rc::new(RefCell::new(Value::String(s.to_lowercase()))),
                     _ => panic!("type `str` has no property {}", b_key)
                 }
             }
 
-            _ => return a_value.clone()  // Already Rc<RefCell<Value>>
-        };
+            _ => Self::error_expr(a, &format!("property access is not supported on values of this type"))  // TODO: show more info for this error
+            // _ => a_value.clone()
+        }
     }
 
     /// Evaluates an `Expr`
@@ -200,16 +219,16 @@ impl Interpreter {
     /// # Returns
     /// 
     /// The value of this Expr, as `Value`
-    pub fn expr(ctx: Rc<RefCell<Context>>, expr: Expr) -> Rc<RefCell<Value>> {
-        return match expr {
+    pub fn expr(ctx: Rc<RefCell<Context>>, expr: &SpannedExpr) -> Rc<RefCell<Value>> {
+        return match &expr.expr {
             // if it's a literal we can just unwrap the inner value
-            Expr::Literal(v) => Rc::new(RefCell::new(v)),
+            Expr::Literal(v) => Rc::new(RefCell::new(v.clone())),
 
             // it it's a variable, we try to get this variable
             // cloning here doesn't ACTUALLY clone the value, it just
             // increments its reference count.
             Expr::Variable(left) => {
-                let id = Self::expr(ctx.clone(), *left).borrow().into_id();
+                let id = Self::expr(ctx.clone(), &left).borrow().into_id();
                 // check if the ID is a *SPECIAL* literal
                 match id.as_ref() {
                     // get OS platform
@@ -218,19 +237,19 @@ impl Interpreter {
                     "OSPL_current_family" => Rc::new(RefCell::new(Value::String(std::env::consts::FAMILY.to_string()))),
                     _ => ctx.borrow()
                             .get(&id)
-                            .unwrap_or_else(|| panic!("oh no `{}` no exist!", id))
+                            .unwrap_or_else(|| Self::error_expr(expr, &format!("variable not found: {}", id)))
                             .clone()  // cheap Rc clone
                 }
             }
 
-            Expr::Property(a, b) => Self::property_access(ctx, a, b),
+            Expr::Property(a, b) => Self::property_access(ctx, &*a, &*b),
 
             // if it's a function call, we go and handle that
             Expr::FunctionCall { left, args } => {
-                let function = Self::expr(ctx.clone(), *left);
+                let function = Self::expr(ctx.clone(), &*left);
                 let new_args: Vec<Rc<RefCell<Value>>> = args
                     .iter()
-                    .map(|arg| Self::expr(ctx.clone(), arg.clone()).clone())
+                    .map(|arg| Self::expr(ctx.clone(), arg).clone())
                     .collect();
 
                 // colton says: dunno how this works so I can't optimize it without kevin's help..
@@ -250,19 +269,15 @@ impl Interpreter {
                             library,
                             symbol,
                             &args_clone,
-                        ).expect("foreign function call failed");
+                        ).unwrap_or_else(|e| Self::error_expr(expr, &format!("CFFI function call failed: {}", e)));
                         return Rc::new(RefCell::new(result));
                     }
                     _ => {}
                 }
 
                 return Self::do_call(Some(ctx.clone()), function, new_args)
-                    .unwrap_or_else(|| Rc::new(
-                        RefCell::new(
-                            Value::Null
-                        )
-                    )
-                )
+                    .unwrap_or_else(|e| Self::error_expr(expr, &format!("error during call: {:?}", e)))
+                    .unwrap_or_else(|| Rc::new(RefCell::new(Value::Null)))
             }
 
             // if it's an operation, we do some dispath
@@ -272,8 +287,8 @@ impl Interpreter {
 
                 // make a copy here because we don't want to mess with the original,
                 // as binaryops don't modify the original data
-                let lvalue: Value = Self::expr(ctx.clone(), *left).borrow().clone();
-                let rvalue: Value = Self::expr(ctx.clone(), *right).borrow().clone();
+                let lvalue: Value = Self::expr(ctx.clone(), &*left).borrow().clone();
+                let rvalue: Value = Self::expr(ctx.clone(), &*right).borrow().clone();
 
                 // dispatch the correct op
                 return Rc::new(RefCell::new(match op.as_str() {
@@ -305,17 +320,17 @@ impl Interpreter {
                     ">>" => lvalue >> rvalue,
                     "<<" => lvalue << rvalue,
 
-                    _ => panic!(">//< I don't know how to preform '{}'!", op)
+                    _ => Self::error_expr(expr, "I don't know how to preform '{}'!")
                 }))
             },
 
             Expr::UnaryOp { left, op } => {
                 // make a copy here because we don't want to mess with the original,
                 // as unaryops don't modify the original data
-                let value: Value = Self::expr(ctx.clone(), *left).borrow().clone();
+                let value: Value = Self::expr(ctx.clone(), &left).borrow().clone();
 
                 return Rc::new(RefCell::new(
-                    match &*op {
+                    match &**op {
                         "!" => Value::Bool(!value.truthiness()),  // invert truthiness
                         "!!" => todo!("implement !!"),
                         "typeof" => todo!("implement typeof"),
@@ -325,12 +340,12 @@ impl Interpreter {
             },
 
             Expr::Ref(inner_expr) => {
-                let value = Self::expr(ctx.clone(), *inner_expr);
+                let value = Self::expr(ctx.clone(), &*inner_expr);
                 return Rc::new(RefCell::new(Value::Ref(value)))
             },
 
             Expr::Deref(inner_expr) => {
-                let evaluated = Self::expr(ctx.clone(), *inner_expr);
+                let evaluated = Self::expr(ctx.clone(), &*inner_expr);
                 let borrowed = evaluated.borrow();
 
                 match &*borrowed {
@@ -356,7 +371,7 @@ impl Interpreter {
             Expr::TupleLiteral(inner_exprs) => {
                 let mut values: Vec<Rc<RefCell<Value>>> = Vec::new();
                 for expr in inner_exprs {
-                    let val = Self::expr(ctx.clone(), expr.borrow().clone());
+                    let val = Self::expr(ctx.clone(), &*expr.borrow());
                     values.push(val);
                 }
                 return Rc::new(
@@ -367,15 +382,18 @@ impl Interpreter {
             },
 
             Expr::MixmapLiteral { positional, keyed } => {
-                let mut new_keyed: HashMap<String, Rc<RefCell<Value>>> = HashMap::new();
+                let mut new_keyed: HashMap<Rc<String>, Rc<RefCell<Value>>> = HashMap::new();
                 for (k, ex) in keyed {
-                    let val = Self::expr(ctx.clone(), ex.borrow().clone());
-                    new_keyed.insert(k, val);
+                    let val = Self::expr(ctx.clone(), &*ex.borrow());
+
+                    // `new_keyed`'s `k` here is guaranteed to live as long as `keyed`'s `k` does here.
+                    // what did I just type? I don't know!
+                    new_keyed.insert(k.clone(), val);  // FIXME: replace keys with Rc<str> or &str and remove the clone
                 }
 
                 let mut new_ordered: Vec<Rc<RefCell<Value>>> = Vec::new();
                 for ex in positional {
-                    let val = Self::expr(ctx.clone(), ex.borrow().clone());
+                    let val = Self::expr(ctx.clone(), &*ex.borrow());
                     new_ordered.push(val);
                 }
 
@@ -391,10 +409,10 @@ impl Interpreter {
             },
 
             Expr::ObjectLiteral(hm) => {
-                let mut new_hm: HashMap<String, Rc<RefCell<Value>>> = HashMap::new();
+                let mut new_hm: HashMap<Rc<String>, Rc<RefCell<Value>>> = HashMap::new();
                 for (k, ex) in hm {
-                    let val = Self::expr(ctx.clone(), ex.borrow().clone());
-                    new_hm.insert(k, val);
+                    let val = Self::expr(ctx.clone(), &*ex.borrow());
+                    new_hm.insert(k.clone(), val);
                 }
 
                 return Rc::new(
@@ -409,14 +427,14 @@ impl Interpreter {
                     RefCell::new(
                         Value::RealFn {
                             ctx: Rc::downgrade(&ctx),
-                            spec,
-                            body
+                            spec: spec.clone(),  // performance cost is acceptable here (we don't run this function very often.. or at least no good programmer should...)
+                            body: body.clone(), 
                         }
                     )
                 )
             },
 
-            Expr::Import(ast) => {
+            Expr::Import { ast, .. } => {
                 // create a new context for this module
                 let newctx =
                     Rc::new(
@@ -435,7 +453,7 @@ impl Interpreter {
                 // evaluate all that shit
                 for stmt in ast {
                     // we don't care about the return here
-                    Self::stmt(newctx.clone(), stmt);
+                    Self::stmt(newctx.clone(), &stmt);
                 };
 
                 // put it into an object
@@ -449,6 +467,7 @@ impl Interpreter {
                 );
             },
 
+            // not run often so preformance here is pretty much moot
             Expr::ForeignFunctionLiteral { library, symbol, arg_types, return_type } => {
                 let mut ctx_mut = ctx.borrow_mut();
                 let registry = &mut ctx_mut.ffi_registry;
@@ -463,26 +482,29 @@ impl Interpreter {
                     symbol.clone(),
                     arg_types.clone(),
                     return_type.clone(),
-                ).expect("foreign function registration failed");
+                ).unwrap_or_else(|e| Self::error_expr(expr, &format!("failed to register C FFI function (why is this written twice in the code?): {}", e)));
 
                 return Rc::new(RefCell::new(Value::ForeignFn {
-                    library,
-                    symbol,
-                    arg_types,
-                    return_type,
+                    library: library.clone(),
+                    symbol: symbol.clone(),
+                    arg_types: arg_types.clone(),
+                    return_type: return_type.clone(),
                 }));
             },
 
+            // called even LESS so NOBODY fucking cares about preformance here
             Expr::CffiLoad { path } => {
-                let mut ctx_mut = ctx.borrow_mut();
-                ctx_mut.ffi_registry.load_library(path.clone(), &path)
-                    .unwrap_or_else(|e| panic!("Failed to load library '{}': {}", path, e));
+                let path_str = Self::expr(ctx.clone(), &path).borrow().clone();  // TODO: maybe stop this
 
-                return Rc::new(RefCell::new(Value::ForeignLib { library: path }));
+                let mut ctx_mut = ctx.borrow_mut();
+                ctx_mut.ffi_registry.load_library(path_str.into_id(), &path_str.into_id())
+                    .unwrap_or_else(|e| panic!("Failed to load library '{}': {}", path_str, e));
+
+                return Rc::new(RefCell::new(Value::ForeignLib { library: path_str.into_id() }));
             },
 
             Expr::CffiFn { target, arg_types, return_type } => {
-                let target_value = Self::expr(ctx.clone(), *target);
+                let target_value = Self::expr(ctx.clone(), &*target);
                 let (library, symbol) = match &*target_value.borrow() {
                     Value::ForeignSymbol { library, symbol } => (library.clone(), symbol.clone()),
                     Value::ForeignFn { library, symbol, .. } => (library.clone(), symbol.clone()),
@@ -502,28 +524,33 @@ impl Interpreter {
                     symbol.clone(),
                     arg_types.clone(),
                     return_type.clone(),
-                ).expect("foreign function registration failed");
+                ).unwrap_or_else(|e| Self::error_expr(expr, &format!("CFFI function registration failed: {}", e)));
 
                 return Rc::new(RefCell::new(Value::ForeignFn {
                     library,
                     symbol,
-                    arg_types,
-                    return_type,
+                    arg_types: arg_types.clone(),
+                    return_type: return_type.clone(),
                 }));
             },
 
             // THIS IS AWFUL
             Expr::TypeCast { left, into, mode: TypeCastMode::Convert } => {
-                let value = Self::expr(ctx.clone(), *left);
+                let value = Self::expr(ctx.clone(), &*left);
                 let thing = match (&*value.borrow(), &into) {
                     // stupid
                     (Value::Byte(b), Type::String) => Value::String(String::from(*b as char)),
                     (Value::SignedDoubleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
                     (Value::SignedDoubleWord(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
+                    (Value::Byte(a), Type::DoubleWord) => Value::DoubleWord(*a as u32),
 
+                    (Value::SignedQuadrupleWord(a), Type::QuadrupleWord) => Value::QuadrupleWord(*a as u64),
                     (Value::QuadrupleWord(a), Type::String) => Value::String(a.to_string()),
 
-                    (Value::String(s), Type::Tuple) => Value::Tuple(
+                    (Value::String(s), Type::Byte) => Value::Byte(s.parse::<u8>().expect("failed to cast str to byte, invalid u8")),
+                    (Value::String(s), Type::DoubleWord) => Value::DoubleWord(s.parse::<u32>().expect("failed to cast str to byte, invalid u32")),
+
+                    (Value::String(s), Type::Tuple { .. }) => Value::Tuple(
                         s
                         .as_bytes()
                         .iter()
@@ -548,12 +575,12 @@ impl Interpreter {
 
             Expr::TypeCast { left, into, mode: TypeCastMode::PointerReinterpret } => {
                 unsafe {
-                    let value = Self::expr(ctx.clone(), *left);
+                    let value = Self::expr(ctx.clone(), &*left);
 
                     let thing = match (&*value.borrow(), &into) {
                         // quadruple word is a ptr
                         (Value::QuadrupleWord(a), Type::String) => casts::ptr_to_string(*a as *const u8),
-                        (Value::QuadrupleWord(a), Type::Tuple) => casts::ptr_to_tuple(*a as *const u8),
+                        (Value::QuadrupleWord(a), Type::Tuple { length: Some(length) }) => casts::ptr_to_tuple(*a as *const u8, *length),
                         _ => panic!("idk how to cast {:?} into {:?}", value, into)
                     };
 
@@ -566,7 +593,7 @@ impl Interpreter {
             },
 
             Expr::DeepCopy(of) => {
-                let value = Self::expr(ctx.clone(), *of);
+                let value = Self::expr(ctx.clone(), &*of);
                 return Rc::new(
                     RefCell::new(
                         value.borrow().deep_clone()
@@ -582,16 +609,16 @@ impl Interpreter {
     /// 
     /// * `ctx` - The context in which to execute the statement.
     ///           This context is mutated.
-    /// * `stmt` - The `Statement` to execute.
+    /// * `stmt` - The `SpannedStatement` to execute.
     /// 
     /// # Returns
     /// 
     /// The control flow of the statement as `StatementControl`
-    pub fn stmt(ctx: Rc<RefCell<Context>>, stmt: Statement) -> StatementControl {
-        match stmt {
+    pub fn stmt(ctx: Rc<RefCell<Context>>, span: &SpannedStatement) -> StatementControl {
+        match &span.stmt {
             Statement::Assign { left, right } => {
-                let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *left);
-                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
+                let var: Rc<RefCell<Value>> = Self::expr(ctx.clone(), left);
+                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), right);
 
                 *var.borrow_mut() = lit.borrow().clone();  // here
                 return StatementControl::Default
@@ -604,29 +631,29 @@ impl Interpreter {
                 let v: std::cell::RefMut<'_, Value> = var.borrow_mut();
                 let x: std::cell::Ref<'_, Value> = lit.borrow();
 
-                match &*op {
+                match &**op {
                     "+=" => Self::handle_add_assign(v, x),
                     "-=" => Self::handle_sub_assign(v, x),
-                    "*=" => todo!("implement *="),
-                    "/=" => todo!("implement /="),
-                    "%=" => todo!("implement %="),
+                    "*=" => Self::error_stmt(&span, "TODO: implement"),
+                    "/=" => Self::error_stmt(&span, "TODO: implement"),
+                    "%=" =>Self::error_stmt(&span, "TODO: implement"),
 
-                    "||=" => todo!("implement ||="),
-                    "&&=" => todo!("implement &&="),
-                    "^^=" => todo!("implement ^^="),
-                    "<<=" => todo!("implement <<="),
-                    ">>=" => todo!("implement >>="),
-                    _ => panic!("unknown op {}", op)
+                    "||=" => Self::error_stmt(&span, "TODO: implement"),
+                    "&&=" => Self::error_stmt(&span, "TODO: implement"),
+                    "^^=" => Self::error_stmt(&span, "TODO: implement"),
+                    "<<=" => Self::error_stmt(&span, "TODO: implement"),
+                    ">>=" => Self::error_stmt(&span, "TODO: implement"),
+                    _ => Self::error_stmt(&span, "unknown operation")
                 }
                 return StatementControl::Default
             },
             
             Statement::Declaration { left, right } => {
-                let var: String = Self::expr(ctx.clone(), *left)
+                let var: String = Self::expr(ctx.clone(), left)
                     .borrow()
                     .into_id();
 
-                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), *right);
+                let lit: Rc<RefCell<Value>> = Self::expr(ctx.clone(), right);
 
                 //ctx.borrow_mut().set(&var, lit.borrow().clone());
                 ctx.borrow_mut().declare(&var, lit);
@@ -675,7 +702,7 @@ impl Interpreter {
 
             // nice to have for testing
             Statement::Print { thing } => {
-                let to_print = Self::expr(ctx, *thing);
+                let to_print = Self::expr(ctx, thing);
                 print!("{}", to_print.borrow());
                 return StatementControl::Default
             }
@@ -687,26 +714,23 @@ impl Interpreter {
             Statement::Select { matching, cases } => 
                 return Self::preform_select(ctx.clone(), matching, cases),
 
-            Statement::Loop(body) => match Self::do_loop(ctx, *body) {
+            Statement::Loop(body) => match Self::do_loop(ctx, body) {
                 StatementControl::Break => return StatementControl::Default,
                 StatementControl::EarlyReturn(v) => return StatementControl::EarlyReturn(v),  // may or may not fucking work
                 _ => unreachable!("you might actually be stupid")
             },
 
-            Statement::Delete { left } => {
-                match *left {
-                    Expr::Variable(v) => ctx.borrow_mut().delete(
-                        &Self::expr(ctx.clone(), *v).borrow().into_id()
-                    ),
-                    _ => panic!("I don't know how the hell to delete that")
-                };
-                return StatementControl::Default;
+            Statement::Delete { .. } => {
+                todo!("(re)implement delete... COLTON!");
             },
 
             Statement::ImportLib { name, path } => {
                 match ctx.borrow_mut().ffi_registry.load_library(name.clone(), &path) {
                     Ok(_) => {},
-                    Err(e) => panic!("Failed to load library: {}", e),
+                    Err(e) => Self::error_stmt(
+                        span, 
+                        &format!("Failed to load library: {}", e)  // ehsy?
+                    ),
                 }
                 return StatementControl::Default;
             },
@@ -734,9 +758,9 @@ impl Interpreter {
     /// # Returns
     /// 
     /// The return of this block, if there is one, as `Option<Value>`
-    pub fn block(ctx: Rc<RefCell<Context>>, body: Block) -> Option<Rc<RefCell<Value>>> {
-        for stmt in body.0 {
-            let control: StatementControl = Self::stmt(ctx.clone(), stmt);
+    pub fn block(ctx: Rc<RefCell<Context>>, body: &Block) -> Option<Rc<RefCell<Value>>> {
+        for stmt in &body.stmts {
+            let control: StatementControl = Self::stmt(ctx.clone(), &stmt);
             match control {
                 StatementControl::EarlyReturn(x) => return Some(Rc::new(RefCell::new(x))),
                 StatementControl::Break => panic!("tried to break outside a loop!"),

@@ -14,11 +14,11 @@ impl Interpreter {
     /// if available)
     pub fn do_loop(
         ctx: Rc<RefCell<Context>>,
-        body: Block
+        body: &Block
     ) -> StatementControl {
         'outer: loop {
-            for stmt in &body.0 {   // iterate by reference to avoid cloning
-                let result = Self::stmt(ctx.clone(), stmt.clone());
+            for stmt in &body.stmts {   // iterate by reference to avoid cloning
+                let result = Self::stmt(ctx.clone(), stmt);
                 match result {
                     StatementControl::Break => return result,
                     StatementControl::EarlyReturn(_) => return result,
@@ -36,10 +36,10 @@ impl Interpreter {
     /// `check` may be continued too
     pub fn preform_check(
         ctx: Rc<RefCell<Context>>,
-        matching: Box<Expr>,
-        cases: Vec<(Vec<Subspec>, Block)>
+        matching: &SpannedExpr,
+        cases: &Vec<(Vec<Subspec>, Block)>
     ) -> StatementControl {
-        let thing = Self::expr(ctx.clone(), *matching);
+        let thing = Self::expr(ctx.clone(), matching);
         'outer: for (spec, ex) in cases {
             // create a new context for this case
             // this could very well be optimized... but that's what
@@ -55,10 +55,10 @@ impl Interpreter {
             );
 
             // try to destruct into this new context
-            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().as_values()) {
+            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, &thing.borrow().as_values()) {  // fine... bitch
                 // if it's successful then run this block
-                for stmt in ex.0 {
-                    let ctrl = Self::stmt(newctx.clone(), stmt);
+                for stmt in &ex.stmts {
+                    let ctrl = Self::stmt(newctx.clone(), &stmt);
                     match ctrl {
                         StatementControl::Break => break 'outer,
                         StatementControl::EarlyReturn(_) => return ctrl,
@@ -76,10 +76,10 @@ impl Interpreter {
 
     pub fn preform_select(
         ctx: Rc<RefCell<Context>>,
-        matching: Box<Expr>,
-        cases: Vec<(Vec<Subspec>, Block)>
+        matching: &SpannedExpr,
+        cases: &Vec<(Vec<Subspec>, Block)>
     ) -> StatementControl {
-        let thing = Self::expr(ctx.clone(), *matching);
+        let thing = Self::expr(ctx.clone(), matching);
         // create a new context for our match
         // this could very well be optimized... but that's what
         let newctx = Rc::new(
@@ -94,10 +94,10 @@ impl Interpreter {
 
         'outer: for (spec, ex) in cases {
             // try to destruct into this new context
-            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, thing.borrow().as_values()) {
+            if let Ok(_) = Self::destruct_into(newctx.clone(), spec, &thing.borrow().as_values()) {  // ugly ass
                 // if it's successful then run this block
-                for stmt in ex.0 {
-                    let ctrl = Self::stmt(newctx.clone(), stmt);
+                for stmt in &ex.stmts {
+                    let ctrl = Self::stmt(newctx.clone(), &stmt);
                     match ctrl {
                         StatementControl::Break => break 'outer,
                         StatementControl::EarlyReturn(_) => return ctrl,

@@ -1,4 +1,4 @@
-use crate::Subspec;
+use crate::{SpannedExpr, Subspec};
 
 use super::*;
 
@@ -25,9 +25,9 @@ impl Parser {
 
             // single-style
             else if let Some(single_style) = self.attempt(Self::stmt) {
-                Block(
-                    vec![single_style]
-                )
+                Block {
+                    stmts: vec![single_style],
+                }
             }
 
             else {
@@ -37,7 +37,7 @@ impl Parser {
         return Some((spec, block))
     }
 
-    fn parse_cases_list(&mut self) -> (Expr, Vec<(Vec<Subspec>, Block)>) {
+    fn parse_cases_list(&mut self) -> (SpannedExpr, Vec<(Vec<Subspec>, Block)>) {
         self.skip_ws();
         let matching = self.expr()
             .unwrap_or_else(|| self.parse_error("`check` or `select` requires something to match on"));
@@ -72,7 +72,7 @@ impl Parser {
         return (matching, cases);
     }
 
-    pub fn parse_check(&mut self) -> Option<Statement> {
+    pub fn parse_check(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("check ") {
             return None
         }
@@ -80,14 +80,18 @@ impl Parser {
         let (matching, cases) = self.parse_cases_list();
 
         return Some(
-            Statement::Check {
-                matching: Box::new(matching),
-                cases
-            }
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Check {
+                    matching,
+                    cases
+                },
+                self.filepath.clone()
+            )
         )
     }
 
-    pub fn parse_select(&mut self) -> Option<Statement> {
+    pub fn parse_select(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("select ") {
             return None
         }
@@ -95,14 +99,18 @@ impl Parser {
         let (matching, cases) = self.parse_cases_list();
 
         return Some(
-            Statement::Select {
-                matching: Box::new(matching),
-                cases
-            }
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Select {
+                    matching,
+                    cases
+                },
+                self.filepath.clone()
+            )
         )
     }
 
-    pub fn parse_loop(&mut self) -> Option<Statement> {
+    pub fn parse_loop(&mut self) -> Option<SpannedStatement> {
         if !self.match_next("loop") {
             return None
         }
@@ -111,10 +119,13 @@ impl Parser {
         let ret: Block = self.block()
             .unwrap_or_else(|| self.parse_error("a loop requires a body"));
         return Some(
-            Statement::Loop(
-                Box::new(ret)
+            SpannedStatement::new(
+                self.lineno,
+                Statement::Loop(
+                    Box::new(ret)
+                ),
+                self.filepath.clone()
             )
         )
     }
-
 }

@@ -40,7 +40,7 @@ fn main() {
 fn runfile(path: String, target: &str) {
     // set up
     let ctx: Rc<RefCell<Context>> = Rc::new(RefCell::new(Context::new(None)));
-    let p = &mut Parser::new();
+    let p = &mut Parser::new(&path);
 
     // load file data
     let mut file = File::open(path).expect("file not found!");

@@ -28,10 +28,9 @@ unsafe fn strlen(ptr: *const u8) -> usize {
 }
 
 // tuples
-pub unsafe fn ptr_to_tuple(ptr: *const u8) -> Value {
+pub unsafe fn ptr_to_tuple(ptr: *const u8, len: usize) -> Value {
     unsafe {
         // get size
-        let len = strlen(ptr);
         let slice = slice::from_raw_parts(ptr, len);  // &[u8]
         let vec = slice.to_vec();  // Vec<u8>
         let new_vec =

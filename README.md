@@ -2,6 +2,26 @@
 
 A programming language with a Rust-based interpreter.
 
+## Prerequisites
+
+Before building, you need to install the `libffi` development library:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install libffi-dev
+```
+
+**macOS:**
+```bash
+brew install libffi
+```
+
+**Fedora/RHEL:**
+```bash
+sudo dnf install libffi-devel
+```
+
 ## Building
 
 ```bash

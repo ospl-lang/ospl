@@ -1,7 +1,6 @@
 use super::Value;
 use std::cmp::Ordering;
-use std::ops::SubAssign;
-use std::{fmt::Display, ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub}, rc::Rc, cell::RefCell};
+use std::{fmt::Display, ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub}, rc::Rc, cell::RefCell};
 
 macro_rules! typical_op {
     ($lhs:expr, $rhs:expr, $op:tt) => {{
@@ -42,44 +41,20 @@ macro_rules! typical_op {
             (Value::Single(a), Value::Single(b))                            => Value::Single(a $op b),
             (Value::Float(a), Value::Float(b))                              => Value::Float(a $op b),
 
-            // stuff you CANNOT do
-            (Value::Null, _)                                                => panic!(">//< can't operate to Null!"),
-            (_, Value::Null)                                                => panic!(">//< can't operate with Null!"),
+            // causes hangs!
+            (Value::Null, Value::Null)                                      => Value::Null $op Value::Null,
+            (other @ _, Value::Null)                                        => other $op Value::Null,
+            (Value::Null, other @ _)                                        => Value::Null $op other,
 
-            (Value::Void, _)                                                => panic!(">//< can't operate to Void!"),
-            (_, Value::Void)                                                => panic!(">//< can't operate with Void!"),
+            (Value::Void, Value::Void)                                      => Value::Void $op Value::Void,
+            (other @ _, Value::Void)                                        => other $op Value::Void,
+            (Value::Void, other @ _)                                        => Value::Void  $op other,
+
+            (Value::Undefined, Value::Undefined)                            => Value::Undefined $op Value::Undefined,
+            (other @ _, Value::Undefined)                                   => other $op Value::Undefined,
+            (Value::Undefined, other @ _)                                   => Value::Undefined  $op other,
 
             _ => panic!("I don't know how to do this operation on these types (possible type saftey issue)!")
-        }
-    }};
-}
-
-macro_rules! typical_op_assign {
-    ($lhs:expr, $rhs:expr, $op:tt) => {{
-        match ($lhs, $rhs) {
-            // integer types
-            (Value::Byte(a), Value::Byte(b))                                => *a $op b,
-            (Value::SignedByte(a), Value::SignedByte(b))                    => *a $op b,
-            (Value::Word(a), Value::Word(b))                                => *a $op b,
-            (Value::SignedWord(a), Value::SignedWord(b))                    => *a $op b,
-            (Value::DoubleWord(a), Value::DoubleWord(b))                    => *a $op b,
-            (Value::SignedDoubleWord(a), Value::SignedDoubleWord(b))        => *a $op b,
-            (Value::QuadrupleWord(a), Value::QuadrupleWord(b))              => *a $op b,
-            (Value::SignedQuadrupleWord(a), Value::SignedQuadrupleWord(b))  => *a $op b,
-
-            // float types
-            (Value::Half(a), Value::Half(b))                                => *a $op b,
-            (Value::Single(a), Value::Single(b))                            => *a $op b,
-            (Value::Float(a), Value::Float(b))                              => *a $op b,
-
-            // stuff you CANNOT do
-            (Value::Null, _)                                                => panic!(">//< can't operate to Null!"),
-            (_, Value::Null)                                                => panic!(">//< can't operate with Null!"),
-
-            (Value::Void, _)                                                => panic!(">//< can't operate to Void!"),
-            (_, Value::Void)                                                => panic!(">//< can't operate with Void!"),
-
-            _ => panic!("FUCK")
         }
     }};
 }
@@ -104,14 +79,18 @@ macro_rules! typical_cmp {
             (Value::String(a), Value::String(b))                            => a $op b,
             (Value::Bool(x), Value::Bool(y))                                => x $op y,
 
-            // stuff you CANNOT do
+            // dumb shit
             (Value::Null, Value::Null)                                      => true,
             (_, Value::Null)                                                => false,
             (Value::Null, _)                                                => false,
 
             (Value::Void, Value::Void)                                      => true,
-            (Value::Void, _)                                                => false,
             (_, Value::Void)                                                => false,
+            (Value::Void, _)                                                => false,
+
+            (Value::Undefined, Value::Undefined)                            => true,
+            (other @ _, Value::Undefined)                                   => false,
+            (Value::Undefined, other @ _)                                   => false,
 
             _                                                               => panic!(">//< can't compare {:?} with {:?}", $lhs, $rhs),
         }
@@ -172,7 +151,7 @@ impl Shr for Value {
 impl Eq for Value {}
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool { typical_cmp!(self, other, ==) }
-    fn ne(&self, other: &Self) -> bool { typical_cmp!(self, other, !=) }
+    fn ne(&self, other: &Self) -> bool { typical_cmp!(self, other, !=) }  // very stupid but works!
 }
 
 impl PartialOrd for Value {
@@ -217,21 +196,6 @@ impl Add for Value {
     }
 }
 
-// incomplete but I can't be fucked
-impl AddAssign for Value {
-    fn add_assign(&mut self, rhs: Self) {
-        match (self, rhs) {
-            (Self::String(a), Self::String(b)) => {
-                a.push_str(&b);
-            },
-            (Self::Tuple(a), b) => {
-                a.push(Rc::new(RefCell::new(b)));
-            },
-            (s, r) => typical_op_assign!(s, r, +=),
-        }
-    }
-}
-
 impl Sub for Value {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -262,42 +226,6 @@ fn pop_n_chars_of_string_fast(a: &mut String, n: usize) -> String {
 
     s.truncate(new_len);
     return s
-}
-
-fn pop_n_chars_of_string(a: &mut String, mut b: usize) {
-    while b > 0 {
-        a.pop();
-        b -= 1;
-    };
-}
-
-fn pop_n_elems_of_tup(a: &mut Vec<Rc<RefCell<Value>>>, mut b: usize) {
-    while b > 0 {
-        a.pop();
-        b -= 1;
-    };
-}
-
-impl SubAssign for Value {
-    fn sub_assign(&mut self, rhs: Self) {
-        match (self, rhs) {
-            // ensure that we can't pop off a negative amount of chars, only
-            // allow unsigned numbers. TODO: This is slow!
-            (Self::String(a), Self::Byte(b)) => pop_n_chars_of_string(a, b as usize),
-            (Self::String(a), Self::Word(b)) => pop_n_chars_of_string(a, b as usize),
-            (Self::String(a), Self::DoubleWord(b)) => pop_n_chars_of_string(a, b as usize),
-            (Self::String(a), Self::QuadrupleWord(b)) => pop_n_chars_of_string(a, b as usize),
-
-            // tuple stuff agh
-            (Self::Tuple(a), Self::Byte(b)) => pop_n_elems_of_tup(a, b as usize),
-            (Self::Tuple(a), Self::Word(b)) => pop_n_elems_of_tup(a, b as usize),
-            (Self::Tuple(a), Self::DoubleWord(b)) => pop_n_elems_of_tup(a, b as usize),
-            (Self::Tuple(a), Self::QuadrupleWord(b)) => pop_n_elems_of_tup(a, b as usize),
-            
-            // try this then
-            (s, r) => typical_op_assign!(s, r, -=),
-        };
-    }
 }
 
 impl Div for Value {

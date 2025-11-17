@@ -74,6 +74,7 @@ pub enum Value {
     Ref(Rc<RefCell<Value>>),
     Null,
     Void,
+    Undefined,
 
     // integers
     Byte(u8),
@@ -232,6 +233,36 @@ impl Value {
             // may or may not work!
             //Value::Ref(inner) => Self::truthiness(inner),
             _ => true
+        }
+    }
+
+    pub fn is_empty_type(&self) -> bool {
+        return match self {
+            Value::Null => true,
+            Value::Void => true,
+            Value::Undefined => true,
+            _ => false
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        return match self {
+            Value::Null => true,
+            _ => false
+        }
+    }
+
+    pub fn is_void(&self) -> bool {
+        return match self {
+            Value::Void => true,
+            _ => false
+        }
+    }
+
+    pub fn is_undefined(&self) -> bool {
+        return match self {
+            Value::Undefined => true,
+            _ => false
         }
     }
 

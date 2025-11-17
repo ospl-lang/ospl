@@ -95,8 +95,8 @@ impl Interpreter {
 
                 return t
                     .get(idx)
-                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
-                    .clone()
+                    .cloned()
+                    .unwrap_or_else(|| Rc::new(RefCell::new(Value::Undefined)))
             },
 
             Value::Mixmap { ordered, keyed } => {
@@ -135,14 +135,14 @@ impl Interpreter {
                     // Rc clone
                     ordered
                         .get(idx)
-                        .unwrap_or_else(|| Self::error_expr(b, "index not found"))
-                        .clone()
+                        .cloned()
+                        .unwrap_or_else(|| Rc::new(RefCell::new(Value::Undefined)))
                 } else {
                     // Rc clone
                     keyed
                         .get(&b_key)
-                        .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
-                        .clone()
+                        .cloned()
+                        .unwrap_or_else(|| Rc::new(RefCell::new(Value::Undefined)))
                 }
             },
 
@@ -159,8 +159,9 @@ impl Interpreter {
 
                 return symbols
                     .get(&b_key)
-                    .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
-                    .clone()
+                    .cloned()
+                    .unwrap_or_else(|| Rc::new(RefCell::new(Value::Undefined)))
+                 // .unwrap_or_else(|| Self::error_expr(b, &format!("key not found: {}", b_key)))
             },
 
             Value::Module { context } =>
@@ -199,6 +200,12 @@ impl Interpreter {
                     "len" => return Rc::new(RefCell::new(Value::QuadrupleWord(s.len() as u64))),
                     "to_upper" => return Rc::new(RefCell::new(Value::String(s.to_uppercase()))),
                     "to_lower" => return Rc::new(RefCell::new(Value::String(s.to_lowercase()))),
+                    "lines" => return Rc::new(RefCell::new(Value::Tuple(
+                        s
+                            .split('\n')
+                            .map(|x| Rc::new(RefCell::new(Value::String(x.to_string()))))
+                            .collect()
+                    ))),
                     _ => panic!("type `str` has no property {}", b_key)
                 }
             }

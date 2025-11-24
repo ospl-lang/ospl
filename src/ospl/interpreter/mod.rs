@@ -254,10 +254,17 @@ impl Interpreter {
             // if it's a function call, we go and handle that
             Expr::FunctionCall { left, args } => {
                 let function = Self::expr(ctx.clone(), &*left);
-                let new_args: Vec<Rc<RefCell<Value>>> = args
-                    .iter()
-                    .map(|arg| Self::expr(ctx.clone(), arg).clone())
-                    .collect();
+                // remember the instance the callee was resolved from so argument
+                // evaluation doesn't overwrite it (e.g., nested property accesses)
+                let call_instance = ctx.borrow().current_instance.clone();
+
+                let mut new_args: Vec<Rc<RefCell<Value>>> = Vec::with_capacity(args.len());
+                for arg in args {
+                    let value = Self::expr(ctx.clone(), arg);
+                    new_args.push(value);
+                    // restore the original call instance after each arg
+                    ctx.borrow_mut().current_instance = call_instance.clone();
+                }
 
                 // colton says: dunno how this works so I can't optimize it without kevin's help..
                 match &*function.borrow() {

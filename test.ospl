@@ -29,7 +29,7 @@ def a = 0d;
 a = 1d;
 
 select result {
-    case (6) {
+    case ([6]) {
         print "result is 6\n";
     }
 
@@ -52,6 +52,51 @@ print cos_fn(0.0f);
 print "\n";
 
 # CFFI convenience syntax
-def example_lib = ?!CFFI_Load './libexample.so';
-def cffi_add = ?!CFFI_Fn example_lib.add_numbers (i32, i32) -> i32;
-def cffi_cos = ?!CFFI_Fn example_lib.cosine (f64) -> f64;
+def example_lib = OSPL_CFFI_Load './libexample.so';
+def cffi_add = OSPL_CFFI_Fn example_lib.add_numbers (i32, i32) -> i32;
+def cffi_cos = OSPL_CFFI_Fn example_lib.cosine (f64) -> f64;
+
+# Property access / thisref regression checks
+def assert_eq = fn(expected, actual, label) {
+    if expected == actual {
+        print "PASS: ";
+        print label;
+        print "\n";
+    } else {
+        print "FAIL: ";
+        print label;
+        print " expected ";
+        print expected;
+        print " got ";
+        print actual;
+        print "\n";
+    };
+};
+
+def x = obj {
+    id: "x",
+    y: fn(?this, $value) {
+        def self = @this;
+        return self.id;
+    },
+    z: fn(?this) {
+        def self = @this;
+        return self.id;
+    }
+};
+
+def a_obj = obj {
+    id: "a",
+    b: obj {
+        id: "b",
+        c: fn(?this) {
+            def self = @this;
+            return self.id;
+        }
+    }
+};
+
+assert_eq("b", a_obj.b.c(), "inner call binds thisref to nested object");
+assert_eq("x", x.y(a_obj.b.c()), "thisref survives nested call argument");
+assert_eq("x", x.y(a_obj.b), "thisref survives property access argument");
+assert_eq("x", x.y(x.z), "thisref survives sibling property argument");

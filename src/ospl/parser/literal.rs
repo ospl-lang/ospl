@@ -232,7 +232,12 @@ impl Parser {
     /// touch any of these `?` and the mixmap literals will break.
     /// I AM WARNING YOU.
     pub fn parse_kv_pair(&mut self) -> Option<(String, Rc<RefCell<SpannedExpr>>)> {
-        let id = self.identifier()?;
+        let id: String =
+            if let Some(x) = self.attempt(Self::identifier) { x }
+            else if let Some(x) = self.attempt(Self::raw_string_literal) { x.into_id() }
+            else if let Some(x) = self.attempt(Self::escaped_string_literal) { x.into_id() }
+            else { return None };  // failed to find an ID, return none
+
         self.skip_ws();
         self.expect_char(Self::KV_PAIR_SEP)?;
         self.skip_ws();
@@ -386,6 +391,7 @@ impl Parser {
     const NULL_KW: &str = "null";
     const TRUE_KW: &str = "true";
     const FALSE_KW: &str = "false";
+    const UNDEFINED_KEYWORD: &str = "empty";
     pub fn literal(&mut self) -> Option<SpannedExpr> {
         // DRY violation speedrun - any% WR (as of Wednesday, October 22nd, 2025 @ 06:37:06 PM EDT)
         if let Some(num) = self.attempt(Self::number_literal_fraction) {
@@ -401,7 +407,8 @@ impl Parser {
                 Self::NULL_KW,  // null
                 Self::VOID_KW,  // void
                 Self::TRUE_KW,  // true
-                Self::FALSE_KW  // false
+                Self::FALSE_KW,  // false
+                Self::UNDEFINED_KEYWORD  // empy
             ]) {
             return match v.as_ref() {
                 // null_and_void: yknow like the chase theme from FORSAKEN.
@@ -410,6 +417,7 @@ impl Parser {
                 Self::VOID_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Void))),
                 Self::TRUE_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Bool(true)))),
                 Self::FALSE_KW => Some(self.new_spanned_expr(Expr::Literal(Value::Bool(false)))),
+                Self::UNDEFINED_KEYWORD => Some(self.new_spanned_expr(Expr::Literal(Value::Undefined))),
                 _ => None
             };
         }

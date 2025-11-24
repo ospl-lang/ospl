@@ -33,8 +33,8 @@ impl Parser {
         return Self {
             input: String::new(),
             pos: 0,
-            lineno: 0,
-            colno: 0,
+            lineno: 1,
+            colno: 1,
             filepath: Rc::from(real_path),
         }
     }
@@ -78,8 +78,8 @@ impl Parser {
     pub fn feed(&mut self, s: &str) {
         self.input = s.to_string(); // replace buffer
         self.pos = 0usize;
-        self.lineno = 0usize;
-        self.colno = 0usize;
+        self.lineno = 1usize;
+        self.colno = 1usize;
     }
 }
 
@@ -95,6 +95,9 @@ impl Parser {
         // newline cheeeeeeeck!
         if c == '\n' {
             self.lineno += 1;
+            self.colno = 1;
+        } else {
+            self.colno += 1;
         }
 
         return Some(c);
@@ -102,7 +105,7 @@ impl Parser {
 
     fn peek_or_consume(&mut self, target: char) -> bool {
         let c = self.peek()
-            .unwrap_or('\0');  // string terminator
+            .unwrap_or('\0');
 
         if c == target {
             self.next_char();
@@ -155,8 +158,8 @@ near:
 
 {}",
             self.filepath,
-            self.lineno - 1,  // line numbers start at one
-            self.colno - 1,
+            self.lineno,
+            self.colno,
             self.pos,
             &self.input.get(self.pos..self.pos+1).unwrap_or("<unknown>"),
             &self.input[self.pos..context_max].trim(),

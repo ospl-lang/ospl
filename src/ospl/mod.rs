@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}
+    cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc
 };
 
 use crate::Context;
@@ -103,10 +103,8 @@ pub enum Value {
         body: Block,
     },
     RealFn {
-        // weak pointer reason:
-        // if the context drops, the function is guaranteed (I think?) to also
-        // have been dropped.
-        ctx: Weak<RefCell<Context>>,
+        // keep the defining context alive to allow closures
+        ctx: Rc<RefCell<Context>>,
         spec: Vec<Subspec>,
         body: Block,
     },

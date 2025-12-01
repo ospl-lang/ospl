@@ -230,14 +230,7 @@ impl Interpreter {
         // create child context
         let child_ctx = Rc::new(
             RefCell::new(
-                Context::new(
-                    Some(
-                        ctx
-                            .upgrade()
-                            .ok_or(CallError::LexicalScopeDeleted)?
-                            .clone()
-                    )
-                )
+                Context::new(Some(ctx.clone()))
             )
         );
 

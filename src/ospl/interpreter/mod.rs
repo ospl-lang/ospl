@@ -440,7 +440,7 @@ impl Interpreter {
                 return Rc::new(
                     RefCell::new(
                         Value::RealFn {
-                            ctx: Rc::downgrade(&ctx),
+                            ctx: ctx.clone(),
                             spec: spec.clone(),  // performance cost is acceptable here (we don't run this function very often.. or at least no good programmer should...)
                             body: body.clone(), 
                         }

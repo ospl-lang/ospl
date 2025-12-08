@@ -18,7 +18,7 @@ pub struct Context {
     pub vars: HashMap<String, Rc<RefCell<Value>>>,
 
     /// The current instance we're doing
-    pub current_instance: Option<Weak<RefCell<Value>>>,
+    pub current_instance: Option<Rc<RefCell<Value>>>,
 
     /// Registry for FFI functions
     pub ffi_registry: FfiRegistry,

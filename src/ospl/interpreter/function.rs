@@ -56,7 +56,7 @@ impl Interpreter {
                         .ok_or(DestructionError::ThisRefShouldNotBeThere)?
                         .clone();
 
-                    b.set(&id, Value::Ref(this.upgrade().unwrap().clone()));  // operate with the same mutable borrow
+                    b.set(&id, Value::Ref(this));  // operate with the same mutable borrow
 
                     /* we want to UNSET the current_instance after any
                      * destructions, we don't want that to linger around.

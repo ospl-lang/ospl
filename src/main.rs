@@ -40,6 +40,8 @@ fn main() {
 fn runfile(path: String, target: &str) {
     // set up
     let ctx: Rc<RefCell<Context>> = Rc::new(RefCell::new(Context::new(None)));
+    // builtins
+    ctx.borrow_mut().declare("input", Rc::new(RefCell::new(Value::BuiltinInput)));
     let p = &mut Parser::new(&path);
 
     // load file data

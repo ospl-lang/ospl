@@ -41,7 +41,10 @@ pub enum Type {
     MacroFn, RealFn,
 
     // CFFI types
-    ForeignFn, ForeignLib, ForeignSymbol
+    ForeignFn, ForeignLib, ForeignSymbol,
+
+    // Builtins
+    BuiltinInput,
 }
 
 impl Type {
@@ -90,6 +93,9 @@ pub enum Value {
     Half(f32),
     Single(f32),
     Float(f64),
+
+    // builtin functions
+    BuiltinInput,
 
     Bool(bool),
     String(String),
@@ -324,6 +330,7 @@ impl Value {
                 library: library.clone(),
                 symbol: symbol.clone(),
             },
+            Value::BuiltinInput => Value::BuiltinInput,
             Value::Null => Value::Null,
             Value::Void => Value::Void,
 
@@ -356,6 +363,7 @@ impl Value {
 
             Value::RealFn { .. } => Type::RealFn,
             Value::MacroFn { .. } => Type::MacroFn,
+            Value::BuiltinInput => Type::BuiltinInput,
             Value::Ref(to) => Type::Ref(
                 Some(
                     Box::new(

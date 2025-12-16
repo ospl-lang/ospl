@@ -40,6 +40,17 @@ Alternative commands:
 - `run-expr` - run a file as an expression
 - `run-stmt` - run a file as a single statement
 
+## Input
+
+Use the builtin `input()` function to read a line from stdin (trims trailing newlines). You can optionally pass a prompt string to display before reading:
+
+```ospl
+def name = input("Name: ");
+print "Hello ";
+print name;
+print "\n";
+```
+
 ## Syntax
 
 Comments:

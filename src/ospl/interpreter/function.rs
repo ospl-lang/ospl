@@ -2,6 +2,7 @@ use super::*;
 
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::io::{self, Write};
 
 #[derive(Debug)]
 pub enum DestructionError {
@@ -56,7 +57,7 @@ impl Interpreter {
                         .ok_or(DestructionError::ThisRefShouldNotBeThere)?
                         .clone();
 
-                    b.set(&id, Value::Ref(this.upgrade().unwrap().clone()));  // operate with the same mutable borrow
+                    b.set(&id, Value::Ref(this));  // operate with the same mutable borrow
 
                     /* we want to UNSET the current_instance after any
                      * destructions, we don't want that to linger around.
@@ -163,6 +164,19 @@ impl Interpreter {
         args: Vec<Rc<RefCell<Value>>>
     ) -> Result<Option<Rc<RefCell<Value>>>, CallError> {
         match *f.borrow() {
+            Value::BuiltinInput => {
+                // optional prompt argument
+                if let Some(prompt) = args.get(0) {
+                    print!("{}", prompt.borrow());
+                    io::stdout().flush().ok();
+                }
+
+                let mut buf = String::new();
+                io::stdin().read_line(&mut buf)
+                    .map_err(|_| CallError::IlligalType)?;
+                let line = buf.trim_end_matches(&['\r', '\n'][..]).to_string();
+                return Ok(Some(Rc::new(RefCell::new(Value::String(line)))));
+            }
             Value::RealFn {..} => return Self::do_fn_call(ctx, f.clone(), args),
             Value::MacroFn {..} => return Self::do_macro_call(ctx, f.clone(), args),
             _ => Err(CallError::WhydYouCallIt)
@@ -230,14 +244,7 @@ impl Interpreter {
         // create child context
         let child_ctx = Rc::new(
             RefCell::new(
-                Context::new(
-                    Some(
-                        ctx
-                            .upgrade()
-                            .ok_or(CallError::LexicalScopeDeleted)?
-                            .clone()
-                    )
-                )
+                Context::new(Some(ctx.clone()))
             )
         );
 

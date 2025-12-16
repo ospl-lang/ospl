@@ -88,7 +88,7 @@ impl Interpreter {
                 }
 
                 // set current instance
-                ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
+                ctx.borrow_mut().current_instance = Some(a_value.clone());
 
                 let idx: usize = b_key.parse::<usize>()
                     .unwrap_or_else(|e| Self::error_expr(b, &format!("failed to parse tuple index (is it not an integer?): {}", e)));
@@ -129,7 +129,7 @@ impl Interpreter {
 
                 // ==== NORMAL CASE ====
                 // set current instance
-                ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
+                ctx.borrow_mut().current_instance = Some(a_value.clone());
 
                 return if let Ok(idx) = b_key.parse::<usize>() {
                     // Rc clone
@@ -155,7 +155,7 @@ impl Interpreter {
 
                 // ==== NORMAL CASE ====
                 // set current instance
-                ctx.borrow_mut().current_instance = Some(Rc::downgrade(&a_value.clone()));
+                ctx.borrow_mut().current_instance = Some(a_value.clone());
 
                 return symbols
                     .get(&b_key)
@@ -440,7 +440,7 @@ impl Interpreter {
                 return Rc::new(
                     RefCell::new(
                         Value::RealFn {
-                            ctx: Rc::downgrade(&ctx),
+                            ctx: ctx.clone(),
                             spec: spec.clone(),  // performance cost is acceptable here (we don't run this function very often.. or at least no good programmer should...)
                             body: body.clone(), 
                         }

@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}
+    cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc
 };
 
 use crate::Context;
@@ -41,7 +41,10 @@ pub enum Type {
     MacroFn, RealFn,
 
     // CFFI types
-    ForeignFn, ForeignLib, ForeignSymbol
+    ForeignFn, ForeignLib, ForeignSymbol,
+
+    // Builtins
+    BuiltinInput,
 }
 
 impl Type {
@@ -91,6 +94,9 @@ pub enum Value {
     Single(f32),
     Float(f64),
 
+    // builtin functions
+    BuiltinInput,
+
     Bool(bool),
     String(String),
     Tuple(Vec<Rc<RefCell<Value>>>),
@@ -103,10 +109,8 @@ pub enum Value {
         body: Block,
     },
     RealFn {
-        // weak pointer reason:
-        // if the context drops, the function is guaranteed (I think?) to also
-        // have been dropped.
-        ctx: Weak<RefCell<Context>>,
+        // keep the defining context alive to allow closures
+        ctx: Rc<RefCell<Context>>,
         spec: Vec<Subspec>,
         body: Block,
     },
@@ -326,6 +330,7 @@ impl Value {
                 library: library.clone(),
                 symbol: symbol.clone(),
             },
+            Value::BuiltinInput => Value::BuiltinInput,
             Value::Null => Value::Null,
             Value::Void => Value::Void,
 
@@ -358,6 +363,7 @@ impl Value {
 
             Value::RealFn { .. } => Type::RealFn,
             Value::MacroFn { .. } => Type::MacroFn,
+            Value::BuiltinInput => Type::BuiltinInput,
             Value::Ref(to) => Type::Ref(
                 Some(
                     Box::new(

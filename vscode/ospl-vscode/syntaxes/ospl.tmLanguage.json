@@ -3,6 +3,7 @@
   "name": "OSPL",
   "scopeName": "source.ospl",
   "patterns": [
+    { "include": "#colors" },
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#numbers" },
@@ -97,6 +98,17 @@
         {
           "name": "constant.numeric.integer.ospl",
           "match": "\\b[0-9]+(?:[bBwWdDqQ])?\\b"
+        }
+      ]
+    },
+    "colors": {
+      "patterns": [
+        {
+          "match": "(=)\\s*(#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3}))\\b",
+          "captures": {
+            "1": { "name": "keyword.operator.assignment.ospl" },
+            "2": { "name": "constant.other.color.hex.ospl" }
+          }
         }
       ]
     },

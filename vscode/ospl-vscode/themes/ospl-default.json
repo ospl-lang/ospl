@@ -102,6 +102,15 @@
       }
     },
     {
+      "name": "Hex Colors",
+      "scope": [
+        "constant.other.color.hex.ospl"
+      ],
+      "settings": {
+        "foreground": "#D4D4D4"
+      }
+    },
+    {
       "name": "Types",
       "scope": [
         "storage.type.numeric.ospl"
